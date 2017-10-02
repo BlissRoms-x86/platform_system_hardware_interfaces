@@ -132,5 +132,6 @@ cc_test {
         "android.system.wifi.keystore@1.0",
         "android.system.wifi.keystore@1.0-adapter-helper",
     ],
+    cflags: ["-Wall", "-Werror"],
     generated_sources: ["android.system.wifi.keystore@1.0-adapter_genc++"],
 }
