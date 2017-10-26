@@ -14,5 +14,7 @@ cc_test {
     cflags: [
         "-O0",
         "-g",
+        "-Wall",
+        "-Werror",
     ],
 }
