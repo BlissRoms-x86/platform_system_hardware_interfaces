@@ -13,6 +13,7 @@ cc_library_shared {
         "libcutils",
         "libhidlbase",
         "libhidltransport",
+        "libkeystore_aidl",
         "libkeystore_binder",
         "liblog",
         "libutils",
