@@ -19,11 +19,24 @@
 
 #include <android/multinetwork.h>
 
-#define IP_PATH "/system/bin/ip"
+#define EXPECT_STATUS(expectedStatus, ret)  \
+    do {                                    \
+        EXPECT_TRUE((ret).isOk());          \
+        EXPECT_EQ((expectedStatus), (ret)); \
+    } while (0)
+
+constexpr const char* IP_PATH = "/system/bin/ip";
 
 // Checks that the given network exists.
 // Returns 0 if it exists or -errno if it does not.
 int checkNetworkExists(net_handle_t netHandle);
+
+// Checks that the given network provides reachability to the given address.
+// Returns 0 if it so or -errno if not.
+int checkReachability(net_handle_t netHandle, const char* addrStr);
+
+// Counts the number of IPv4 and IPv6 routing rules that match the given regexp string.
+int countMatchingIpRules(const std::string& regexString);
 
 // Counts the number of IPv4 and IPv6 routing rules that select the specified fwmark.
 int countRulesForFwmark(const uint32_t fwmark);
