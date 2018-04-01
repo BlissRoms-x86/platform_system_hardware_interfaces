@@ -13,18 +13,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-cc_test {
-    name: "VtsHalNetNetdV1_0TargetTest",
+// Utility code common for all HAL versions.
+cc_library {
+    name: "VtsHalNetNetdTestUtils",
     srcs: [
-        "VtsHalNetNetdV1_0TargetTest.cpp",
+        "VtsHalNetNetdTestUtils.cpp",
     ],
-    defaults: ["VtsHalNetNetdTestDefaults"],
+    export_include_dirs: ["."],
     shared_libs: [
-        "android.system.net.netd@1.0",
+        "libandroid_net",
+        "libbase",
+    ],
+    cflags: [
+        "-Og",
+	"-Wall",
+	"-Werror",
+    ],
+}
+
+// Common build settings for all HAL versions.
+cc_defaults {
+    name: "VtsHalNetNetdTestDefaults",
+    shared_libs: [
         "libandroid_net",
         "libbase",
         "libhidlbase",
         "liblog",
         "libutils",
     ],
+    static_libs: [
+        "VtsHalHidlTargetTestBase",
+        "VtsHalNetNetdTestUtils",
+    ],
+    cflags: [
+        "-Og",
+        "-Wall",
+        "-Werror",
+    ],
+    defaults: ["VtsHalTargetTestDefaults"],
 }
