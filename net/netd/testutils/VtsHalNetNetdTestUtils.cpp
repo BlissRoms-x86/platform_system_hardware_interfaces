@@ -88,7 +88,8 @@ int countMatchingIpRules(const std::string& regexString) {
 
 int countRulesForFwmark(const uint32_t fwmark) {
     // Skip top nibble, which differs between rules.
-    std::string regex = StringPrintf("from all fwmark 0x[0-9a-f]+%x/.* lookup ", fwmark);
+    std::string regex =
+        StringPrintf("from all fwmark 0x(%x|[0-9a-f]+%04x)/.* lookup ", fwmark, fwmark);
     return countMatchingIpRules(regex);
 }
 
