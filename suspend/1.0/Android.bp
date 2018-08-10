@@ -1,0 +1,16 @@
+hidl_interface {
+    name: "android.system.suspend@1.0",
+    root: "android.system",
+    vndk: {
+        enabled: true,
+    },
+    srcs: [
+        "ISystemSuspend.hal",
+        "IWakeLock.hal",
+    ],
+    interfaces: [
+        "android.hidl.base@1.0",
+    ],
+    gen_java: false,
+}
+
