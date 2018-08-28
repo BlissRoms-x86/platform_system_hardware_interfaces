@@ -20,6 +20,7 @@
 #include <android-base/logging.h>
 #include <android-base/unique_fd.h>
 #include <cutils/native_handle.h>
+#include <google/protobuf/text_format.h>
 #include <gtest/gtest.h>
 #include <hidl/HidlTransportSupport.h>
 
@@ -128,6 +129,28 @@ class SystemSuspendTest : public ::testing::Test {
 
     bool isSystemSuspendBlocked() { return isReadBlocked(stateFd); }
 
+    sp<IWakeLock> acquireWakeLock() { return suspendService->acquireWakeLock("TestLock"); }
+
+    SystemSuspendStats getDebugDump() {
+        // Index 0 corresponds to the read end of the pipe; 1 to the write end.
+        int fds[2];
+        pipe2(fds, O_NONBLOCK);
+        native_handle_t* handle = native_handle_create(1, 0);
+        handle->data[0] = fds[1];
+
+        suspendService->debug(handle, {});
+        SystemSuspendStats stats{};
+        google::protobuf::TextFormat::ParseFromString(readFd(fds[0]), &stats);
+
+        native_handle_close(handle);
+        close(fds[0]);
+        close(fds[1]);
+
+        return stats;
+    }
+
+    size_t getWakeLockCount() { return getDebugDump().wake_lock_stats().size(); }
+
     sp<ISystemSuspend> suspendService;
     int stateFd;
     int wakeupCountFd;
@@ -152,7 +175,7 @@ TEST_F(SystemSuspendTest, AutosuspendLoop) {
 // Tests that upon WakeLock destruction SystemSuspend HAL is unblocked.
 TEST_F(SystemSuspendTest, WakeLockDestructor) {
     {
-        sp<IWakeLock> wl = suspendService->acquireWakeLock();
+        sp<IWakeLock> wl = acquireWakeLock();
         ASSERT_NE(wl, nullptr);
         unblockSystemSuspendFromWakeupCount();
         ASSERT_TRUE(isSystemSuspendBlocked());
@@ -163,12 +186,12 @@ TEST_F(SystemSuspendTest, WakeLockDestructor) {
 // Tests that multiple WakeLocks correctly block SystemSuspend HAL.
 TEST_F(SystemSuspendTest, MultipleWakeLocks) {
     {
-        sp<IWakeLock> wl1 = suspendService->acquireWakeLock();
+        sp<IWakeLock> wl1 = acquireWakeLock();
         ASSERT_NE(wl1, nullptr);
         ASSERT_TRUE(isSystemSuspendBlocked());
         unblockSystemSuspendFromWakeupCount();
         {
-            sp<IWakeLock> wl2 = suspendService->acquireWakeLock();
+            sp<IWakeLock> wl2 = acquireWakeLock();
             ASSERT_NE(wl2, nullptr);
             ASSERT_TRUE(isSystemSuspendBlocked());
         }
@@ -180,7 +203,7 @@ TEST_F(SystemSuspendTest, MultipleWakeLocks) {
 // Tests that upon thread deallocation WakeLock is destructed and SystemSuspend HAL is unblocked.
 TEST_F(SystemSuspendTest, ThreadCleanup) {
     std::thread clientThread([this] {
-        sp<IWakeLock> wl = suspendService->acquireWakeLock();
+        sp<IWakeLock> wl = acquireWakeLock();
         ASSERT_NE(wl, nullptr);
         unblockSystemSuspendFromWakeupCount();
         ASSERT_TRUE(isSystemSuspendBlocked());
@@ -194,7 +217,7 @@ TEST_F(SystemSuspendTest, ThreadCleanup) {
 TEST_F(SystemSuspendTest, CleanupOnAbort) {
     ASSERT_EXIT(
         {
-            sp<IWakeLock> wl = suspendService->acquireWakeLock();
+            sp<IWakeLock> wl = acquireWakeLock();
             ASSERT_NE(wl, nullptr);
             std::abort();
         },
@@ -202,6 +225,37 @@ TEST_F(SystemSuspendTest, CleanupOnAbort) {
     ASSERT_TRUE(isSystemSuspendBlocked());
     unblockSystemSuspendFromWakeupCount();
     ASSERT_FALSE(isSystemSuspendBlocked());
+}
+
+// Test that debug dump has correct information about acquired WakeLocks.
+TEST_F(SystemSuspendTest, DebugDump) {
+    {
+        sp<IWakeLock> wl = suspendService->acquireWakeLock("TestLock");
+        SystemSuspendStats debugDump = getDebugDump();
+        ASSERT_EQ(debugDump.wake_lock_stats().size(), 1);
+        ASSERT_EQ(debugDump.wake_lock_stats().begin()->second.name(), "TestLock");
+    }
+    ASSERT_EQ(getWakeLockCount(), 0);
+}
+
+// Stress test acquiring/releasing WakeLocks.
+TEST_F(SystemSuspendTest, WakeLockStressTest) {
+    // numThreads threads will acquire/release numLocks locks each.
+    constexpr int numThreads = 10;
+    constexpr int numLocks = 10000;
+    std::thread tds[numThreads];
+
+    for (int i = 0; i < numThreads; i++) {
+        tds[i] = std::thread([this] {
+            for (int i = 0; i < numLocks; i++) {
+                sp<IWakeLock> wl = acquireWakeLock();
+            }
+        });
+    }
+    for (int i = 0; i < numThreads; i++) {
+        tds[i].join();
+    }
+    ASSERT_EQ(getWakeLockCount(), 0);
 }
 
 }  // namespace android

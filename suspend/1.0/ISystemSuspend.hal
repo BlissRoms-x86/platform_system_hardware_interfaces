@@ -31,7 +31,10 @@ interface ISystemSuspend {
      * device from suspending. This method must be able to be called
      * independently of enableAutosuspend().
      *
+     * @param debugName debug string attached to the acquired IWakeLock. Wake
+     *     lock names are not necessarily unique.
+     *
      * @return lock the interface for the created wake lock.
      */
-    acquireWakeLock() generates (IWakeLock lock);
+    acquireWakeLock(string debugName) generates (IWakeLock lock);
 };
