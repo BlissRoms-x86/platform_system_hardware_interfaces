@@ -19,7 +19,9 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/strings.h>
+#include <google/protobuf/text_format.h>
 #include <hidl/Status.h>
+#include <hwbinder/IPCThreadState.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -30,6 +32,7 @@
 
 using ::android::base::ReadFdToString;
 using ::android::base::WriteStringToFd;
+using ::android::hardware::IPCThreadState;
 using ::android::hardware::Void;
 using ::std::string;
 
@@ -50,12 +53,17 @@ string readFd(int fd) {
     return string{buf, static_cast<size_t>(n)};
 }
 
+static inline int getCallingPid() {
+    return IPCThreadState::self()->getCallingPid();
+}
+
 WakeLock::WakeLock(SystemSuspend* systemSuspend) : mSystemSuspend(systemSuspend) {
     mSystemSuspend->incSuspendCounter();
 }
 
 WakeLock::~WakeLock() {
     mSystemSuspend->decSuspendCounter();
+    mSystemSuspend->deleteWakeLockStatsEntry(reinterpret_cast<uint64_t>(this));
 }
 
 SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd)
@@ -63,7 +71,8 @@ SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd)
       mCounterCondVar(),
       mSuspendCounter(0),
       mWakeupCountFd(std::move(wakeupCountFd)),
-      mStateFd(std::move(stateFd)) {}
+      mStateFd(std::move(stateFd)),
+      mStats() {}
 
 Return<bool> SystemSuspend::enableAutosuspend() {
     static bool initialized = false;
@@ -77,8 +86,17 @@ Return<bool> SystemSuspend::enableAutosuspend() {
     return true;
 }
 
-Return<sp<IWakeLock>> SystemSuspend::acquireWakeLock() {
-    return new WakeLock{this};
+Return<sp<IWakeLock>> SystemSuspend::acquireWakeLock(const hidl_string& name) {
+    IWakeLock* wl = new WakeLock{this};
+    {
+        auto l = std::lock_guard(mStatsLock);
+        WakeLockStats wlStats{};
+        wlStats.set_name(name);
+        wlStats.set_pid(getCallingPid());
+        // Use WakeLock's address as a unique identifier.
+        (*mStats.mutable_wake_lock_stats())[reinterpret_cast<uint64_t>(wl)] = wlStats;
+    }
+    return wl;
 }
 
 Return<void> SystemSuspend::debug(const hidl_handle& handle,
@@ -88,7 +106,12 @@ Return<void> SystemSuspend::debug(const hidl_handle& handle,
         return Void();
     }
     int fd = handle->data[0];
-    WriteStringToFd(std::to_string(mSuspendCounter) + "\n", fd);
+    string debugStr;
+    {
+        auto l = std::lock_guard(mStatsLock);
+        google::protobuf::TextFormat::PrintToString(mStats, &debugStr);
+    }
+    WriteStringToFd(debugStr, fd);
     fsync(fd);
     return Void();
 }
@@ -103,6 +126,11 @@ void SystemSuspend::decSuspendCounter() {
     if (--mSuspendCounter == 0) {
         mCounterCondVar.notify_one();
     }
+}
+
+void SystemSuspend::deleteWakeLockStatsEntry(uint64_t id) {
+    auto l = std::lock_guard(mStatsLock);
+    mStats.mutable_wake_lock_stats()->erase(id);
 }
 
 void SystemSuspend::initAutosuspend() {

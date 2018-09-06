@@ -30,15 +30,46 @@ cc_defaults {
     cpp_std: "c++17",
 }
 
+cc_defaults {
+    name: "system_suspend_stats_defaults",
+    shared_libs: [
+        "libprotobuf-cpp-full",
+    ],
+    static_libs: ["SystemSuspendStatsProto"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+}
+
+cc_library {
+    name: "SystemSuspendStatsProto",
+    srcs: [
+        "SystemSuspendStats.proto",
+    ],
+    proto: {
+        export_proto_headers: true,
+        type: "full",
+    },
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+}
+
 cc_binary {
     name: "android.system.suspend@1.0-service",
     relative_install_path: "hw",
     defaults: [
         "system_suspend_defaults",
+        "system_suspend_stats_defaults",
     ],
     init_rc: ["android.system.suspend@1.0-service.rc"],
     vintf_fragments: ["android.system.suspend@1.0-service.xml"],
     shared_libs: ["android.system.suspend@1.0"],
+    static_libs: ["SystemSuspendStatsProto"],
     srcs: [
         "SystemSuspend.cpp",
         "main.cpp",
@@ -49,7 +80,10 @@ cc_binary {
 // Do *NOT* use for compliance with *TS.
 cc_test {
     name: "SystemSuspendV1_0UnitTest",
-    defaults: ["system_suspend_defaults"],
+    defaults: [
+        "system_suspend_defaults",
+        "system_suspend_stats_defaults",
+    ],
     static_libs: ["android.system.suspend@1.0"],
     srcs: [
         "SystemSuspend.cpp",
