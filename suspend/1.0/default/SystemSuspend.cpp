@@ -57,13 +57,24 @@ static inline int getCallingPid() {
     return IPCThreadState::self()->getCallingPid();
 }
 
-WakeLock::WakeLock(SystemSuspend* systemSuspend) : mSystemSuspend(systemSuspend) {
+WakeLock::WakeLock(SystemSuspend* systemSuspend) : mReleased(), mSystemSuspend(systemSuspend) {
     mSystemSuspend->incSuspendCounter();
 }
 
 WakeLock::~WakeLock() {
-    mSystemSuspend->decSuspendCounter();
-    mSystemSuspend->deleteWakeLockStatsEntry(reinterpret_cast<uint64_t>(this));
+    releaseOnce();
+}
+
+Return<void> WakeLock::release() {
+    releaseOnce();
+    return Void();
+}
+
+void WakeLock::releaseOnce() {
+    std::call_once(mReleased, [this]() {
+        mSystemSuspend->decSuspendCounter();
+        mSystemSuspend->deleteWakeLockStatsEntry(reinterpret_cast<uint64_t>(this));
+    });
 }
 
 SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd)
