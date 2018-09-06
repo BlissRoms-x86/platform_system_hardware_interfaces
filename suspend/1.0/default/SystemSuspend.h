@@ -45,7 +45,12 @@ class WakeLock : public IWakeLock {
     WakeLock(SystemSuspend* systemSuspend);
     ~WakeLock();
 
+    Return<void> release();
+
    private:
+    inline void releaseOnce();
+    std::once_flag mReleased;
+
     SystemSuspend* mSystemSuspend;
 };
 

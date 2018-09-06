@@ -183,6 +183,16 @@ TEST_F(SystemSuspendTest, WakeLockDestructor) {
     ASSERT_FALSE(isSystemSuspendBlocked());
 }
 
+// Tests that upon WakeLock::release() SystemSuspend HAL is unblocked.
+TEST_F(SystemSuspendTest, WakeLockRelease) {
+    sp<IWakeLock> wl = acquireWakeLock();
+    ASSERT_NE(wl, nullptr);
+    unblockSystemSuspendFromWakeupCount();
+    ASSERT_TRUE(isSystemSuspendBlocked());
+    wl->release();
+    ASSERT_FALSE(isSystemSuspendBlocked());
+}
+
 // Tests that multiple WakeLocks correctly block SystemSuspend HAL.
 TEST_F(SystemSuspendTest, MultipleWakeLocks) {
     {
@@ -248,7 +258,9 @@ TEST_F(SystemSuspendTest, WakeLockStressTest) {
     for (int i = 0; i < numThreads; i++) {
         tds[i] = std::thread([this] {
             for (int i = 0; i < numLocks; i++) {
-                sp<IWakeLock> wl = acquireWakeLock();
+                sp<IWakeLock> wl1 = acquireWakeLock();
+                sp<IWakeLock> wl2 = acquireWakeLock();
+                wl2->release();
             }
         });
     }
