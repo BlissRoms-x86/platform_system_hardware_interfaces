@@ -20,6 +20,7 @@
 #include <android-base/logging.h>
 #include <android-base/unique_fd.h>
 #include <cutils/native_handle.h>
+#include <gmock/gmock.h>
 #include <google/protobuf/text_format.h>
 #include <gtest/gtest.h>
 #include <hidl/HidlTransportSupport.h>
@@ -44,6 +45,7 @@ using android::hardware::joinRpcThreadpool;
 using android::hardware::Return;
 using android::hardware::Void;
 using android::system::suspend::V1_0::ISystemSuspend;
+using android::system::suspend::V1_0::ISystemSuspendCallback;
 using android::system::suspend::V1_0::IWakeLock;
 using android::system::suspend::V1_0::readFd;
 using android::system::suspend::V1_0::SystemSuspend;
@@ -151,6 +153,18 @@ class SystemSuspendTest : public ::testing::Test {
 
     size_t getWakeLockCount() { return getDebugDump().wake_lock_stats().size(); }
 
+    void checkLoop(int numIter) {
+        for (int i = 0; i < numIter; i++) {
+            // Mock value for /sys/power/wakeup_count.
+            std::string wakeupCount = std::to_string(rand());
+            ASSERT_TRUE(WriteStringToFd(wakeupCount, wakeupCountFd));
+            ASSERT_EQ(readFd(wakeupCountFd), wakeupCount)
+                << "wakeup count value written by SystemSuspend is not equal to value given to it";
+            ASSERT_EQ(readFd(stateFd), "mem")
+                << "SystemSuspend failed to write correct sleep state.";
+        }
+    }
+
     sp<ISystemSuspend> suspendService;
     int stateFd;
     int wakeupCountFd;
@@ -162,14 +176,7 @@ TEST_F(SystemSuspendTest, OnlyOneEnableAutosuspend) {
 }
 
 TEST_F(SystemSuspendTest, AutosuspendLoop) {
-    for (int i = 0; i < 2; i++) {
-        // Mock value for /sys/power/wakeup_count.
-        std::string wakeupCount = std::to_string(rand());
-        ASSERT_TRUE(WriteStringToFd(wakeupCount, wakeupCountFd));
-        ASSERT_EQ(readFd(wakeupCountFd), wakeupCount)
-            << "wakeup count value written by SystemSuspend is not equal to value given to it";
-        ASSERT_EQ(readFd(stateFd), "mem") << "SystemSuspend failed to write correct sleep state.";
-    }
+    checkLoop(5);
 }
 
 // Tests that upon WakeLock destruction SystemSuspend HAL is unblocked.
@@ -270,11 +277,66 @@ TEST_F(SystemSuspendTest, WakeLockStressTest) {
     ASSERT_EQ(getWakeLockCount(), 0);
 }
 
+// Callbacks are passed around as sp<>. However, mock expectations are verified when mock objects
+// are destroyed, i.e. the test needs to control lifetime of the mock object.
+// MockCallbackImpl can be destroyed independently of its wrapper MockCallback which is passed to
+// SystemSuspend.
+struct MockCallbackImpl {
+    MOCK_METHOD1(notifyWakeup, Return<void>(bool));
+};
+
+class MockCallback : public ISystemSuspendCallback {
+   public:
+    MockCallback(MockCallbackImpl* impl) : mImpl(impl), mDisabled(false) {}
+    Return<void> notifyWakeup(bool x) { return mDisabled ? Void() : mImpl->notifyWakeup(x); }
+    // In case we pull the rug from under MockCallback, but SystemSuspend still has an sp<> to the
+    // object.
+    void disable() { mDisabled = true; }
+
+   private:
+    MockCallbackImpl* mImpl;
+    bool mDisabled;
+};
+
+// Tests that nullptr can't be registered as callbacks.
+TEST_F(SystemSuspendTest, RegisterInvalidCallback) {
+    ASSERT_FALSE(suspendService->registerCallback(nullptr));
+}
+
+// Tests that SystemSuspend HAL correctly notifies wakeup events.
+TEST_F(SystemSuspendTest, CallbackNotifyWakeup) {
+    constexpr int numWakeups = 5;
+    MockCallbackImpl impl;
+    // SystemSuspend should suspend numWakeup + 1 times. However, it might
+    // only be able to notify numWakeup times. The test case might have
+    // finished by the time last notification completes.
+    EXPECT_CALL(impl, notifyWakeup).Times(testing::AtLeast(numWakeups));
+    sp<MockCallback> cb = new MockCallback(&impl);
+    ASSERT_TRUE(suspendService->registerCallback(cb));
+    checkLoop(numWakeups + 1);
+    cb->disable();
+}
+
+// Tests that SystemSuspend HAL correctly deals with a dead callback.
+TEST_F(SystemSuspendTest, DeadCallback) {
+    ASSERT_EXIT(
+        {
+            sp<MockCallback> cb = new MockCallback(nullptr);
+            ASSERT_TRUE(suspendService->registerCallback(cb));
+            std::exit(0);
+        },
+        ::testing::ExitedWithCode(0), "");
+
+    // Dead process callback must still be dealt with either by unregistering it
+    // or checking isOk() on every call.
+    checkLoop(3);
+}
 }  // namespace android
 
 int main(int argc, char** argv) {
     setenv("TREBLE_TESTING_OVERRIDE", "true", true);
     ::testing::AddGlobalTestEnvironment(android::SystemSuspendTestEnvironment::Instance());
+    ::testing::InitGoogleMock(&argc, argv);
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
