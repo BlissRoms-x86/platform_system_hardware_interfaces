@@ -84,7 +84,10 @@ cc_test {
         "system_suspend_defaults",
         "system_suspend_stats_defaults",
     ],
-    static_libs: ["android.system.suspend@1.0"],
+    static_libs: [
+        "android.system.suspend@1.0",
+        "libgmock",
+    ],
     srcs: [
         "SystemSuspend.cpp",
         "SystemSuspendUnitTest.cpp"
