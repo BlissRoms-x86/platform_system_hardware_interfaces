@@ -49,6 +49,7 @@ using android::system::suspend::V1_0::ISystemSuspendCallback;
 using android::system::suspend::V1_0::IWakeLock;
 using android::system::suspend::V1_0::readFd;
 using android::system::suspend::V1_0::SystemSuspend;
+using android::system::suspend::V1_0::WakeLockType;
 
 namespace android {
 
@@ -131,7 +132,9 @@ class SystemSuspendTest : public ::testing::Test {
 
     bool isSystemSuspendBlocked() { return isReadBlocked(stateFd); }
 
-    sp<IWakeLock> acquireWakeLock() { return suspendService->acquireWakeLock("TestLock"); }
+    sp<IWakeLock> acquireWakeLock() {
+        return suspendService->acquireWakeLock(WakeLockType::PARTIAL, "TestLock");
+    }
 
     SystemSuspendStats getDebugDump() {
         // Index 0 corresponds to the read end of the pipe; 1 to the write end.
@@ -247,7 +250,7 @@ TEST_F(SystemSuspendTest, CleanupOnAbort) {
 // Test that debug dump has correct information about acquired WakeLocks.
 TEST_F(SystemSuspendTest, DebugDump) {
     {
-        sp<IWakeLock> wl = suspendService->acquireWakeLock("TestLock");
+        sp<IWakeLock> wl = acquireWakeLock();
         SystemSuspendStats debugDump = getDebugDump();
         ASSERT_EQ(debugDump.wake_lock_stats().size(), 1);
         ASSERT_EQ(debugDump.wake_lock_stats().begin()->second.name(), "TestLock");
