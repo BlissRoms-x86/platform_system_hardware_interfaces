@@ -92,7 +92,8 @@ Return<bool> SystemSuspend::enableAutosuspend() {
     return true;
 }
 
-Return<sp<IWakeLock>> SystemSuspend::acquireWakeLock(const hidl_string& name) {
+Return<sp<IWakeLock>> SystemSuspend::acquireWakeLock(WakeLockType /* type */,
+                                                     const hidl_string& name) {
     IWakeLock* wl = new WakeLock{this};
     {
         auto l = std::lock_guard(mStatsLock);
