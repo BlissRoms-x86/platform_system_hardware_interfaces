@@ -64,7 +64,7 @@ class SystemSuspend : public ISystemSuspend, public hidl_death_recipient {
    public:
     SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd);
     Return<bool> enableAutosuspend() override;
-    Return<sp<IWakeLock>> acquireWakeLock(const hidl_string& name) override;
+    Return<sp<IWakeLock>> acquireWakeLock(WakeLockType type, const hidl_string& name) override;
     Return<bool> registerCallback(const sp<ISystemSuspendCallback>& cb) override;
     Return<void> debug(const hidl_handle& handle, const hidl_vec<hidl_string>& options) override;
     void serviceDied(uint64_t /* cookie */, const wp<IBase>& service);
