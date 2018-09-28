@@ -50,6 +50,7 @@ using android::system::suspend::V1_0::IWakeLock;
 using android::system::suspend::V1_0::readFd;
 using android::system::suspend::V1_0::SystemSuspend;
 using android::system::suspend::V1_0::WakeLockType;
+using namespace std::chrono_literals;
 
 namespace android {
 
@@ -79,8 +80,8 @@ class SystemSuspendTestEnvironment : public ::testing::Environment {
     void registerTestService() {
         std::thread testService([this] {
             configureRpcThreadpool(1, true /* callerWillJoin */);
-            sp<ISystemSuspend> suspend =
-                new SystemSuspend(std::move(wakeupCountFds[1]), std::move(stateFds[1]));
+            sp<ISystemSuspend> suspend = new SystemSuspend(
+                std::move(wakeupCountFds[1]), std::move(stateFds[1]), 0ms /* baseSleepTime */);
             status_t status = suspend->registerAsService(kServiceName);
             if (android::OK != status) {
                 LOG(FATAL) << "Unable to register service: " << status;

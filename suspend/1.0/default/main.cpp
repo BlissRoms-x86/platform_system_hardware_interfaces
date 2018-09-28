@@ -17,6 +17,7 @@ using android::hardware::configureRpcThreadpool;
 using android::hardware::joinRpcThreadpool;
 using android::system::suspend::V1_0::ISystemSuspend;
 using android::system::suspend::V1_0::SystemSuspend;
+using namespace std::chrono_literals;
 
 static constexpr char kSysPowerWakeupCount[] = "/sys/power/wakeup_count";
 static constexpr char kSysPowerState[] = "/sys/power/state";
@@ -34,7 +35,8 @@ int main() {
     }
 
     configureRpcThreadpool(1, true /* callerWillJoin */);
-    sp<ISystemSuspend> suspend = new SystemSuspend(std::move(wakeupCountFd), std::move(stateFd));
+    sp<ISystemSuspend> suspend =
+        new SystemSuspend(std::move(wakeupCountFd), std::move(stateFd), 100ms /* baseSleepTime */);
     status_t status = suspend->registerAsService();
     if (android::OK != status) {
         LOG(FATAL) << "Unable to register service: " << status;
