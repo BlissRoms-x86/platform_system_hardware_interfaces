@@ -77,8 +77,13 @@ void WakeLock::releaseOnce() {
     });
 }
 
-SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd)
-    : mSuspendCounter(0), mWakeupCountFd(std::move(wakeupCountFd)), mStateFd(std::move(stateFd)) {}
+SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd,
+                             std::chrono::milliseconds baseSleepTime)
+    : mSuspendCounter(0),
+      mWakeupCountFd(std::move(wakeupCountFd)),
+      mStateFd(std::move(stateFd)),
+      mBaseSleepTime(baseSleepTime),
+      mSleepTime(baseSleepTime) {}
 
 Return<bool> SystemSuspend::enableAutosuspend() {
     static bool initialized = false;
@@ -165,6 +170,7 @@ void SystemSuspend::deleteWakeLockStatsEntry(WakeLockIdType id) {
 void SystemSuspend::initAutosuspend() {
     std::thread autosuspendThread([this] {
         while (true) {
+            std::this_thread::sleep_for(mSleepTime);
             lseek(mWakeupCountFd, 0, SEEK_SET);
             const string wakeupCount = readFd(mWakeupCountFd);
             if (wakeupCount.empty()) {
@@ -192,10 +198,21 @@ void SystemSuspend::initAutosuspend() {
             for (const auto& callback : mCallbacks) {
                 callback->notifyWakeup(success).isOk();  // ignore errors
             }
+            updateSleepTime(success);
         }
     });
     autosuspendThread.detach();
     LOG(INFO) << "automatic system suspend enabled";
+}
+
+void SystemSuspend::updateSleepTime(bool success) {
+    static constexpr std::chrono::milliseconds kMaxSleepTime = 1min;
+    if (success) {
+        mSleepTime = mBaseSleepTime;
+        return;
+    }
+    // Double sleep time after each failure up to one minute.
+    mSleepTime = std::min(mSleepTime * 2, kMaxSleepTime);
 }
 
 }  // namespace V1_0

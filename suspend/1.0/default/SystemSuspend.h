@@ -42,6 +42,8 @@ using ::android::hardware::Return;
 
 using WakeLockIdType = uint64_t;
 
+using namespace std::chrono_literals;
+
 class SystemSuspend;
 
 std::string readFd(int fd);
@@ -62,7 +64,8 @@ class WakeLock : public IWakeLock {
 
 class SystemSuspend : public ISystemSuspend, public hidl_death_recipient {
    public:
-    SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd);
+    SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd,
+                  std::chrono::milliseconds baseSleepTime);
     Return<bool> enableAutosuspend() override;
     Return<sp<IWakeLock>> acquireWakeLock(WakeLockType type, const hidl_string& name) override;
     Return<bool> registerCallback(const sp<ISystemSuspendCallback>& cb) override;
@@ -94,6 +97,12 @@ class SystemSuspend : public ISystemSuspend, public hidl_death_recipient {
         return std::find_if(mCallbacks.begin(), mCallbacks.end(),
                             [&cb](const CbType& i) { return interfacesEqual(i, cb); });
     }
+
+    // Amount of sleep time between consecutive iterations of the suspend loop.
+    std::chrono::milliseconds mBaseSleepTime;
+    std::chrono::milliseconds mSleepTime;
+    // Updates sleep time depending on the result of suspend attempt.
+    void updateSleepTime(bool success);
 };
 
 }  // namespace V1_0
