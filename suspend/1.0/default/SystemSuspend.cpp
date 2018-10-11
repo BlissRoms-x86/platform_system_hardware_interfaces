@@ -194,8 +194,15 @@ void SystemSuspend::initAutosuspend() {
             if (!success) {
                 PLOG(VERBOSE) << "error writing to /sys/power/state";
             }
-            auto callbackLock = std::lock_guard(mCallbackLock);
-            for (const auto& callback : mCallbacks) {
+
+            // A callback could potentially modify mCallbacks (e.g. via registerCallback). That must
+            // not result in a deadlock. To that end, we make a copy of mCallbacks and release
+            // mCallbackLock before calling the copied callbacks.
+            auto callbackLock = std::unique_lock(mCallbackLock);
+            auto callbacksCopy = mCallbacks;
+            callbackLock.unlock();
+
+            for (const auto& callback : callbacksCopy) {
                 callback->notifyWakeup(success).isOk();  // ignore errors
             }
             updateSleepTime(success);
