@@ -335,6 +335,29 @@ TEST_F(SystemSuspendTest, DeadCallback) {
     // or checking isOk() on every call.
     checkLoop(3);
 }
+
+// Callback that registers another callback.
+class CbRegisteringCb : public ISystemSuspendCallback {
+   public:
+    CbRegisteringCb(sp<ISystemSuspend> suspendService) : mSuspendService(suspendService) {}
+    Return<void> notifyWakeup(bool x) {
+        sp<MockCallback> cb = new MockCallback(nullptr);
+        cb->disable();
+        mSuspendService->registerCallback(cb);
+        return Void();
+    }
+
+   private:
+    sp<ISystemSuspend> mSuspendService;
+};
+
+// Tests that callback registering another callback doesn't result in a deadlock.
+TEST_F(SystemSuspendTest, CallbackRegisterCallbackNoDeadlock) {
+    sp<CbRegisteringCb> cb = new CbRegisteringCb(suspendService);
+    ASSERT_TRUE(suspendService->registerCallback(cb));
+    checkLoop(3);
+}
+
 }  // namespace android
 
 int main(int argc, char** argv) {
