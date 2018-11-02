@@ -20,4 +20,5 @@ cc_library_shared {
         "libutils",
     ],
     export_include_dirs: ["include"],
+    cpp_std: "c++17",
 }
