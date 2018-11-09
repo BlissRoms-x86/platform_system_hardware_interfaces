@@ -14,13 +14,15 @@
 
 syntax = "proto3";
 
-// Collects information about individual WakeLock instances.
+// Collects information about an individual live WakeLock instances.
 message WakeLockStats {
     string name = 1;
     int32 pid = 2;
+    bool active = 3;
+    uint64 last_updated = 4;
 }
 
 message SystemSuspendStats {
     // Maps a unique id of a WakeLock instance to the corresponding WakeLockStats message.
-    map<uint64, WakeLockStats> wake_lock_stats = 1;
+    map<string, WakeLockStats> wl_stats = 1;
 }
