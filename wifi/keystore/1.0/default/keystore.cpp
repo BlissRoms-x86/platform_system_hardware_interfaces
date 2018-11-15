@@ -1,17 +1,22 @@
 #include <android-base/logging.h>
-#include <android/security/IKeystoreService.h>
+#include <android/security/keystore/BnKeystoreOperationResultCallback.h>
+#include <android/security/keystore/BnKeystoreResponseCallback.h>
+#include <android/security/keystore/IKeystoreService.h>
 #include <binder/IServiceManager.h>
 #include <private/android_filesystem_config.h>
 
 #include <keystore/KeyCharacteristics.h>
 #include <keystore/KeymasterArguments.h>
 #include <keystore/KeymasterBlob.h>
+#include <keystore/KeystoreResponse.h>
 #include <keystore/OperationResult.h>
 #include <keystore/keymaster_types.h>
 #include <keystore/keystore.h>
 #include <keystore/keystore_hidl_support.h>
+#include <keystore/keystore_promises.h>
 #include <keystore/keystore_return_types.h>
 
+#include <future>
 #include <vector>
 #include "include/wifikeystorehal/keystore.h"
 
@@ -37,6 +42,12 @@ using KSReturn = keystore::KeyStoreNativeReturnCode;
 namespace {
 constexpr const char kKeystoreServiceName[] = "android.security.keystore";
 constexpr int32_t UID_SELF = -1;
+
+using keystore::KeyCharacteristicsPromise;
+using keystore::KeystoreExportPromise;
+using keystore::KeystoreResponsePromise;
+using keystore::OperationResultPromise;
+
 };  // namespace
 
 #define AT __func__ << ":" << __LINE__ << " "
@@ -48,7 +59,7 @@ namespace keystore {
 namespace V1_0 {
 namespace implementation {
 
-using security::IKeystoreService;
+using security::keystore::IKeystoreService;
 // Methods from ::android::hardware::wifi::keystore::V1_0::IKeystore follow.
 Return<void> Keystore::getBlob(const hidl_string& key, getBlob_cb _hidl_cb) {
     sp<IKeystoreService> service = interface_cast<IKeystoreService>(
@@ -79,22 +90,33 @@ Return<void> Keystore::getPublicKey(const hidl_string& keyId, getPublicKey_cb _h
         return Void();
     }
 
-    ExportResult result;
+    int32_t error_code;
+    android::sp<KeystoreExportPromise> promise(new KeystoreExportPromise);
+    auto future = promise->get_future();
     auto binder_result = service->exportKey(
-        String16(keyId.c_str()), static_cast<int32_t>(KeyFormat::X509),
-        KeymasterBlob() /* clientId */, KeymasterBlob() /* appData */, UID_SELF, &result);
+        promise, String16(keyId.c_str()), static_cast<int32_t>(KeyFormat::X509),
+        KeymasterBlob() /* clientId */, KeymasterBlob() /* appData */, UID_SELF, &error_code);
     if (!binder_result.isOk()) {
         LOG(ERROR) << AT << "communication error while calling keystore";
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
         return Void();
     }
-    if (!result.resultCode.isOk()) {
-        LOG(ERROR) << AT << "exportKey failed: " << int32_t(result.resultCode);
+
+    KSReturn rc(error_code);
+    if (!rc.isOk()) {
+        LOG(ERROR) << AT << "exportKey failed: " << error_code;
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
         return Void();
     }
 
-    _hidl_cb(KeystoreStatusCode::SUCCESS, result.exportData);
+    auto export_result = future.get();
+    if (!export_result.resultCode.isOk()) {
+        LOG(ERROR) << AT << "exportKey failed: " << int32_t(export_result.resultCode);
+        _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
+        return Void();
+    }
+
+    _hidl_cb(KeystoreStatusCode::SUCCESS, export_result.exportData);
     return Void();
 }
 
@@ -123,21 +145,33 @@ Return<void> Keystore::sign(const hidl_string& keyId, const hidl_vec<uint8_t>& d
         return Void();
     }
 
-    KeyCharacteristics keyCharacteristics;
     String16 key_name16(keyId.c_str());
-    int32_t aidl_result;
-    auto binder_result = service->getKeyCharacteristics(
-        key_name16, KeymasterBlob(), KeymasterBlob(), UID_SELF, &keyCharacteristics, &aidl_result);
+    int32_t error_code;
+    android::sp<KeyCharacteristicsPromise> kc_promise(new KeyCharacteristicsPromise);
+    auto kc_future = kc_promise->get_future();
+    auto binder_result = service->getKeyCharacteristics(kc_promise, key_name16, KeymasterBlob(),
+                                                        KeymasterBlob(), UID_SELF, &error_code);
     if (!binder_result.isOk()) {
         LOG(ERROR) << AT << "communication error while calling keystore";
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
         return Void();
     }
-    if (KSReturn(aidl_result).isOk()) {
-        LOG(ERROR) << AT << "getKeyCharacteristics failed: " << aidl_result;
+    KSReturn rc(error_code);
+    if (!rc.isOk()) {
+        LOG(ERROR) << AT << "getKeyCharacteristics failed: " << error_code;
+        _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
+        return Void();
     }
 
-    auto algorithm = getKeyAlgoritmFromKeyCharacteristics(keyCharacteristics);
+    auto [km_response, characteristics] = kc_future.get();
+
+    if (KSReturn(km_response.response_code()).isOk()) {
+        LOG(ERROR) << AT << "getKeyCharacteristics failed: " << km_response.response_code();
+        _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
+        return Void();
+    }
+
+    auto algorithm = getKeyAlgoritmFromKeyCharacteristics(characteristics);
     if (!algorithm.isOk()) {
         LOG(ERROR) << AT << "could not get algorithm from key characteristics";
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
@@ -150,15 +184,25 @@ Return<void> Keystore::sign(const hidl_string& keyId, const hidl_vec<uint8_t>& d
     params[2] = Authorization(TAG_ALGORITHM, algorithm.value());
 
     android::sp<android::IBinder> token(new android::BBinder);
-    OperationResult result;
-    binder_result = service->begin(token, key_name16, (int)KeyPurpose::SIGN, true /*pruneable*/,
-                                   KeymasterArguments(params), std::vector<uint8_t>() /* entropy */,
-                                   UID_SELF, &result);
+    sp<OperationResultPromise> promise(new OperationResultPromise());
+    auto future = promise->get_future();
+    binder_result = service->begin(promise, token, key_name16, (int)KeyPurpose::SIGN,
+                                   true /*pruneable*/, KeymasterArguments(params),
+                                   std::vector<uint8_t>() /* entropy */, UID_SELF, &error_code);
     if (!binder_result.isOk()) {
         LOG(ERROR) << AT << "communication error while calling keystore";
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
         return Void();
     }
+
+    rc = KSReturn(error_code);
+    if (!rc.isOk()) {
+        LOG(ERROR) << AT << "Keystore begin returned: " << int32_t(rc);
+        _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
+        return Void();
+    }
+
+    OperationResult result = future.get();
     if (!result.resultCode.isOk()) {
         LOG(ERROR) << AT << "begin failed: " << int32_t(result.resultCode);
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
@@ -169,13 +213,24 @@ Return<void> Keystore::sign(const hidl_string& keyId, const hidl_vec<uint8_t>& d
     const uint8_t* in = dataToSign.data();
     size_t len = dataToSign.size();
     do {
-        binder_result = service->update(handle, KeymasterArguments(params),
-                                        std::vector<uint8_t>(in, in + len), &result);
+        future = {};
+        binder_result = service->update(promise, handle, KeymasterArguments(params),
+                                        std::vector<uint8_t>(in, in + len), &error_code);
         if (!binder_result.isOk()) {
             LOG(ERROR) << AT << "communication error while calling keystore";
             _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
             return Void();
         }
+
+        rc = KSReturn(error_code);
+        if (!rc.isOk()) {
+            LOG(ERROR) << AT << "Keystore update returned: " << int32_t(rc);
+            _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
+            return Void();
+        }
+
+        result = future.get();
+
         if (!result.resultCode.isOk()) {
             LOG(ERROR) << AT << "update failed: " << int32_t(result.resultCode);
             _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
@@ -183,7 +238,22 @@ Return<void> Keystore::sign(const hidl_string& keyId, const hidl_vec<uint8_t>& d
         }
         if ((size_t)result.inputConsumed > len) {
             LOG(ERROR) << AT << "update consumed more data than provided";
-            service->abort(handle, &aidl_result);
+            sp<KeystoreResponsePromise> abortPromise(new KeystoreResponsePromise);
+            auto abortFuture = abortPromise->get_future();
+            binder_result = service->abort(abortPromise, handle, &error_code);
+            if (!binder_result.isOk()) {
+                LOG(ERROR) << AT << "communication error while calling keystore";
+                _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
+                return Void();
+            }
+            // This is mainly for logging since we already failed.
+            // But if abort returned OK we have to wait untill abort calls the callback
+            // hence the call to abortFuture.get().
+            if (!KSReturn(error_code).isOk()) {
+                LOG(ERROR) << AT << "abort failed: " << error_code;
+            } else if (!(rc = KSReturn(abortFuture.get().response_code())).isOk()) {
+                LOG(ERROR) << AT << "abort failed: " << int32_t(rc);
+            }
             _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
             return Void();
         }
@@ -191,14 +261,28 @@ Return<void> Keystore::sign(const hidl_string& keyId, const hidl_vec<uint8_t>& d
         in += result.inputConsumed;
     } while (len > 0);
 
-    binder_result =
-        service->finish(handle, KeymasterArguments(params), std::vector<uint8_t>() /* signature */,
-                        std::vector<uint8_t>() /* entropy */, &result);
+    future = {};
+    promise = new OperationResultPromise();
+    future = promise->get_future();
+
+    binder_result = service->finish(promise, handle, KeymasterArguments(params),
+                                    std::vector<uint8_t>() /* signature */,
+                                    std::vector<uint8_t>() /* entropy */, &error_code);
     if (!binder_result.isOk()) {
         LOG(ERROR) << AT << "communication error while calling keystore";
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
         return Void();
     }
+
+    rc = KSReturn(error_code);
+    if (!rc.isOk()) {
+        LOG(ERROR) << AT << "Keystore finish returned: " << int32_t(rc);
+        _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
+        return Void();
+    }
+
+    result = future.get();
+
     if (!result.resultCode.isOk()) {
         LOG(ERROR) << AT << "finish failed: " << int32_t(result.resultCode);
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
