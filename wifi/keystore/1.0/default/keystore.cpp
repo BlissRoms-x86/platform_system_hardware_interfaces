@@ -165,7 +165,7 @@ Return<void> Keystore::sign(const hidl_string& keyId, const hidl_vec<uint8_t>& d
 
     auto [km_response, characteristics] = kc_future.get();
 
-    if (KSReturn(km_response.response_code()).isOk()) {
+    if (!KSReturn(km_response.response_code()).isOk()) {
         LOG(ERROR) << AT << "getKeyCharacteristics failed: " << km_response.response_code();
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
         return Void();
