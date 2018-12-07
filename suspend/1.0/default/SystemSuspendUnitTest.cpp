@@ -44,6 +44,7 @@ using android::hardware::configureRpcThreadpool;
 using android::hardware::joinRpcThreadpool;
 using android::hardware::Return;
 using android::hardware::Void;
+using android::system::suspend::V1_0::getEpochTimeNow;
 using android::system::suspend::V1_0::ISystemSuspend;
 using android::system::suspend::V1_0::ISystemSuspendCallback;
 using android::system::suspend::V1_0::IWakeLock;
@@ -80,8 +81,9 @@ class SystemSuspendTestEnvironment : public ::testing::Environment {
     void registerTestService() {
         std::thread testService([this] {
             configureRpcThreadpool(1, true /* callerWillJoin */);
-            sp<ISystemSuspend> suspend = new SystemSuspend(
-                std::move(wakeupCountFds[1]), std::move(stateFds[1]), 0ms /* baseSleepTime */);
+            sp<ISystemSuspend> suspend =
+                new SystemSuspend(std::move(wakeupCountFds[1]), std::move(stateFds[1]),
+                                  1 /* maxStatsEntries */, 0ms /* baseSleepTime */);
             status_t status = suspend->registerAsService(kServiceName);
             if (android::OK != status) {
                 LOG(FATAL) << "Unable to register service: " << status;
@@ -155,7 +157,10 @@ class SystemSuspendTest : public ::testing::Test {
         return stats;
     }
 
-    size_t getWakeLockCount() { return getDebugDump().wake_lock_stats().size(); }
+    size_t getActiveWakeLockCount() {
+        const auto& wlStats = getDebugDump().wl_stats();
+        return count_if(wlStats.begin(), wlStats.end(), [](auto x) { return x.second.active(); });
+    }
 
     void checkLoop(int numIter) {
         for (int i = 0; i < numIter; i++) {
@@ -248,15 +253,43 @@ TEST_F(SystemSuspendTest, CleanupOnAbort) {
     ASSERT_FALSE(isSystemSuspendBlocked());
 }
 
-// Test that debug dump has correct information about acquired WakeLocks.
-TEST_F(SystemSuspendTest, DebugDump) {
+// Test that debug dump has correct information about WakeLocks.
+TEST_F(SystemSuspendTest, DebugDumpWakeLocks) {
+    uint64_t timeNow = getEpochTimeNow();
     {
         sp<IWakeLock> wl = acquireWakeLock();
-        SystemSuspendStats debugDump = getDebugDump();
-        ASSERT_EQ(debugDump.wake_lock_stats().size(), 1);
-        ASSERT_EQ(debugDump.wake_lock_stats().begin()->second.name(), "TestLock");
+        auto wlStats = getDebugDump().wl_stats();
+        ASSERT_EQ(wlStats.size(), 1);
+        ASSERT_EQ(wlStats.begin()->second.name(), "TestLock");
+        ASSERT_EQ(wlStats.begin()->second.pid(), getpid());
+        ASSERT_EQ(wlStats.begin()->second.active(), true);
+        ASSERT_GT(wlStats.begin()->second.last_updated(), timeNow);
+        // We sleep so that the wake lock stats entry get updated with a different timestamp.
+        std::this_thread::sleep_for(1s);
     }
-    ASSERT_EQ(getWakeLockCount(), 0);
+    auto wlStats = getDebugDump().wl_stats();
+    ASSERT_EQ(wlStats.size(), 1);
+    ASSERT_EQ(wlStats.begin()->second.name(), "TestLock");
+    ASSERT_EQ(wlStats.begin()->second.pid(), getpid());
+    ASSERT_EQ(wlStats.begin()->second.active(), false);
+    // The updated timestamp is not deterministic. However, all SystemSuspend HAL calls run in the
+    // order of microseconds, so in practice the updated timestamp should be 1 second newer than the
+    // old one.
+    ASSERT_GT(wlStats.begin()->second.last_updated(), timeNow + 1000000);
+}
+
+// Test that the least recently used wake stats entry is evicted after a given threshold.
+TEST_F(SystemSuspendTest, LruWakeLockStatsEviction) {
+    suspendService->acquireWakeLock(WakeLockType::PARTIAL, "foo");
+    suspendService->acquireWakeLock(WakeLockType::PARTIAL, "bar");
+    suspendService->acquireWakeLock(WakeLockType::PARTIAL, "bar");
+    suspendService->acquireWakeLock(WakeLockType::PARTIAL, "baz");
+
+    auto wlStats = getDebugDump().wl_stats();
+    // Max number of stats entries was set to 1 in SystemSuspend constructor.
+    ASSERT_EQ(wlStats.size(), 1);
+    ASSERT_EQ(wlStats.begin()->second.name(), "baz");
+    ASSERT_EQ(wlStats.begin()->second.active(), false);
 }
 
 // Stress test acquiring/releasing WakeLocks.
@@ -268,7 +301,7 @@ TEST_F(SystemSuspendTest, WakeLockStressTest) {
 
     for (int i = 0; i < numThreads; i++) {
         tds[i] = std::thread([this] {
-            for (int i = 0; i < numLocks; i++) {
+            for (int j = 0; j < numLocks; j++) {
                 sp<IWakeLock> wl1 = acquireWakeLock();
                 sp<IWakeLock> wl2 = acquireWakeLock();
                 wl2->release();
@@ -278,7 +311,7 @@ TEST_F(SystemSuspendTest, WakeLockStressTest) {
     for (int i = 0; i < numThreads; i++) {
         tds[i].join();
     }
-    ASSERT_EQ(getWakeLockCount(), 0);
+    ASSERT_EQ(getActiveWakeLockCount(), 0);
 }
 
 // Callbacks are passed around as sp<>. However, mock expectations are verified when mock objects
