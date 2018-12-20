@@ -4,6 +4,7 @@
 #include <cutils/native_handle.h>
 #include <hidl/HidlTransportSupport.h>
 
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -12,6 +13,7 @@
 
 using android::sp;
 using android::status_t;
+using android::base::Socketpair;
 using android::base::unique_fd;
 using android::hardware::configureRpcThreadpool;
 using android::hardware::joinRpcThreadpool;
@@ -26,12 +28,20 @@ int main() {
     unique_fd wakeupCountFd{TEMP_FAILURE_RETRY(open(kSysPowerWakeupCount, O_CLOEXEC | O_RDWR))};
     if (wakeupCountFd < 0) {
         PLOG(ERROR) << "error opening " << kSysPowerWakeupCount;
-        return 1;
     }
     unique_fd stateFd{TEMP_FAILURE_RETRY(open(kSysPowerState, O_CLOEXEC | O_RDWR))};
     if (stateFd < 0) {
         PLOG(ERROR) << "error opening " << kSysPowerState;
-        return 1;
+    }
+
+    // If either /sys/power/wakeup_count or /sys/power/state fail to open, we construct
+    // SystemSuspend with blocking fds. This way this process will keep running, handle wake lock
+    // requests, collect stats, but won't suspend the device. We want this behavior on devices
+    // (hosts) where system suspend should not be handles by Android platform e.g. ARC++, Android
+    // virtual devices.
+    if (wakeupCountFd < 0 || stateFd < 0) {
+        // This will block all reads/writes to these fds from the suspend thread.
+        Socketpair(SOCK_STREAM, &wakeupCountFd, &stateFd);
     }
 
     configureRpcThreadpool(1, true /* callerWillJoin */);
