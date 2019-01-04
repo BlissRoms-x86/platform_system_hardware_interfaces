@@ -312,4 +312,67 @@ TEST_F(WifiKeystoreHalTest, GetBlob) {
     EXPECT_EQ(result, true);
 }
 
+/**
+ * Test for the Wifi Keystore HAL's getPublicKey() call.
+ */
+TEST_F(WifiKeystoreHalTest, GetPublicKey) {
+    IKeystore::KeystoreStatusCode statusCode;
+
+    auto callback = [&statusCode](IKeystore::KeystoreStatusCode status,
+                                  const ::android::hardware::hidl_vec<uint8_t>& /*value*/) {
+        statusCode = status;
+        return;
+    };
+
+    // Attempting to export a non-existent key should fail.
+
+    statusCode = IKeystore::KeystoreStatusCode::SUCCESS;
+    keystore->getPublicKey(nullptr, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    statusCode = IKeystore::KeystoreStatusCode::SUCCESS;
+    keystore->getPublicKey("", callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    statusCode = IKeystore::KeystoreStatusCode::SUCCESS;
+    keystore->getPublicKey(kTestKeyName, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    // The HAL is expecting the key to belong to the process' user.
+    // If the key belongs to another user's space (e.g. wifi) it should
+    // not be accessible and should fail.
+
+    bool result = generateKey(kTestKeyName, KeyPurpose::SIGNING, AID_WIFI);
+    EXPECT_EQ(result, true);
+
+    keystore->getPublicKey(kTestKeyName, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    result = deleteKey(kTestKeyName, AID_WIFI);
+    EXPECT_EQ(result, true);
+
+    // Accessing the key belonging to the process' uid should succeed.
+
+    result = generateKey(kTestKeyName, KeyPurpose::SIGNING, UID_SELF);
+    EXPECT_EQ(result, true);
+
+    keystore->getPublicKey(kTestKeyName, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::SUCCESS, statusCode);
+
+    result = deleteKey(kTestKeyName, UID_SELF);
+    EXPECT_EQ(result, true);
+
+    // A TYPE_GENERIC key (instead of a TYPE_KEYMASTER_10 key)
+    // should also fail.
+
+    result = insert(kTestKeyName, UID_SELF);
+    EXPECT_EQ(result, true);
+
+    keystore->getPublicKey(kTestKeyName, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    result = deleteKey(kTestKeyName, UID_SELF);
+    EXPECT_EQ(result, true);
+}
+
 }  // namespace
