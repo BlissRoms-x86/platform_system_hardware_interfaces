@@ -14,11 +14,16 @@
  * limitations under the License.
  */
 
+#include "SuspendControlService.h"
 #include "SystemSuspend.h"
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/unique_fd.h>
+#include <android/system/suspend/BnSuspendCallback.h>
+#include <binder/IPCThreadState.h>
+#include <binder/IServiceManager.h>
+#include <binder/ProcessState.h>
 #include <cutils/native_handle.h>
 #include <gmock/gmock.h>
 #include <google/protobuf/text_format.h>
@@ -44,11 +49,13 @@ using android::hardware::configureRpcThreadpool;
 using android::hardware::joinRpcThreadpool;
 using android::hardware::Return;
 using android::hardware::Void;
+using android::system::suspend::BnSuspendCallback;
+using android::system::suspend::ISuspendControlService;
 using android::system::suspend::V1_0::getEpochTimeNow;
 using android::system::suspend::V1_0::ISystemSuspend;
-using android::system::suspend::V1_0::ISystemSuspendCallback;
 using android::system::suspend::V1_0::IWakeLock;
 using android::system::suspend::V1_0::readFd;
+using android::system::suspend::V1_0::SuspendControlService;
 using android::system::suspend::V1_0::SystemSuspend;
 using android::system::suspend::V1_0::WakeLockType;
 using namespace std::chrono_literals;
@@ -56,6 +63,7 @@ using namespace std::chrono_literals;
 namespace android {
 
 static constexpr char kServiceName[] = "TestService";
+static constexpr char kControlServiceName[] = "TestControlService";
 
 static bool isReadBlocked(int fd) {
     struct pollfd pfd {
@@ -81,13 +89,26 @@ class SystemSuspendTestEnvironment : public ::testing::Environment {
     void registerTestService() {
         std::thread testService([this] {
             configureRpcThreadpool(1, true /* callerWillJoin */);
+
+            sp<SuspendControlService> suspendControl = new SuspendControlService();
+            auto controlStatus = ::android::defaultServiceManager()->addService(
+                android::String16(kControlServiceName), suspendControl);
+            if (android::OK != controlStatus) {
+                LOG(FATAL) << "Unable to register service " << kControlServiceName << controlStatus;
+            }
+
+            // Create non-HW binder threadpool for SuspendControlService.
+            sp<android::ProcessState> ps{android::ProcessState::self()};
+            ps->startThreadPool();
+
             sp<ISystemSuspend> suspend =
                 new SystemSuspend(std::move(wakeupCountFds[1]), std::move(stateFds[1]),
-                                  1 /* maxStatsEntries */, 0ms /* baseSleepTime */);
+                                  1 /* maxStatsEntries */, 0ms /* baseSleepTime */, suspendControl);
             status_t status = suspend->registerAsService(kServiceName);
             if (android::OK != status) {
                 LOG(FATAL) << "Unable to register service: " << status;
             }
+
             joinRpcThreadpool();
         });
         testService.detach();
@@ -98,7 +119,16 @@ class SystemSuspendTestEnvironment : public ::testing::Environment {
         ::android::hardware::details::waitForHwService(ISystemSuspend::descriptor, kServiceName);
         sp<ISystemSuspend> suspendService = ISystemSuspend::getService(kServiceName);
         ASSERT_NE(suspendService, nullptr) << "failed to get suspend service";
-        ASSERT_EQ(suspendService->enableAutosuspend(), true) << "failed to start autosuspend";
+
+        sp<IBinder> control =
+            android::defaultServiceManager()->getService(android::String16(kControlServiceName));
+        ASSERT_NE(control, nullptr) << "failed to get the suspend control service";
+        sp<ISuspendControlService> controlService = interface_cast<ISuspendControlService>(control);
+
+        // Start auto-suspend.
+        bool enabled = false;
+        controlService->enableAutosuspend(&enabled);
+        ASSERT_EQ(enabled, true) << "failed to start autosuspend";
     }
 
     unique_fd wakeupCountFds[2];
@@ -111,6 +141,11 @@ class SystemSuspendTest : public ::testing::Test {
         ::android::hardware::details::waitForHwService(ISystemSuspend::descriptor, kServiceName);
         suspendService = ISystemSuspend::getService(kServiceName);
         ASSERT_NE(suspendService, nullptr) << "failed to get suspend service";
+
+        sp<IBinder> control =
+            android::defaultServiceManager()->getService(android::String16(kControlServiceName));
+        ASSERT_NE(control, nullptr) << "failed to get the suspend control service";
+        controlService = interface_cast<ISuspendControlService>(control);
 
         auto* environment = SystemSuspendTestEnvironment::Instance();
         wakeupCountFd = environment->wakeupCountFds[0];
@@ -175,13 +210,16 @@ class SystemSuspendTest : public ::testing::Test {
     }
 
     sp<ISystemSuspend> suspendService;
+    sp<ISuspendControlService> controlService;
     int stateFd;
     int wakeupCountFd;
 };
 
 // Tests that autosuspend thread can only be enabled once.
 TEST_F(SystemSuspendTest, OnlyOneEnableAutosuspend) {
-    ASSERT_EQ(suspendService->enableAutosuspend(), false);
+    bool enabled = false;
+    controlService->enableAutosuspend(&enabled);
+    ASSERT_EQ(enabled, false);
 }
 
 TEST_F(SystemSuspendTest, AutosuspendLoop) {
@@ -319,13 +357,15 @@ TEST_F(SystemSuspendTest, WakeLockStressTest) {
 // MockCallbackImpl can be destroyed independently of its wrapper MockCallback which is passed to
 // SystemSuspend.
 struct MockCallbackImpl {
-    MOCK_METHOD1(notifyWakeup, Return<void>(bool));
+    MOCK_METHOD1(notifyWakeup, binder::Status(bool));
 };
 
-class MockCallback : public ISystemSuspendCallback {
+class MockCallback : public BnSuspendCallback {
    public:
     MockCallback(MockCallbackImpl* impl) : mImpl(impl), mDisabled(false) {}
-    Return<void> notifyWakeup(bool x) { return mDisabled ? Void() : mImpl->notifyWakeup(x); }
+    binder::Status notifyWakeup(bool x) {
+        return mDisabled ? binder::Status::ok() : mImpl->notifyWakeup(x);
+    }
     // In case we pull the rug from under MockCallback, but SystemSuspend still has an sp<> to the
     // object.
     void disable() { mDisabled = true; }
@@ -337,7 +377,9 @@ class MockCallback : public ISystemSuspendCallback {
 
 // Tests that nullptr can't be registered as callbacks.
 TEST_F(SystemSuspendTest, RegisterInvalidCallback) {
-    ASSERT_FALSE(suspendService->registerCallback(nullptr));
+    bool retval = false;
+    controlService->registerCallback(nullptr, &retval);
+    ASSERT_FALSE(retval);
 }
 
 // Tests that SystemSuspend HAL correctly notifies wakeup events.
@@ -349,7 +391,9 @@ TEST_F(SystemSuspendTest, CallbackNotifyWakeup) {
     // finished by the time last notification completes.
     EXPECT_CALL(impl, notifyWakeup).Times(testing::AtLeast(numWakeups));
     sp<MockCallback> cb = new MockCallback(&impl);
-    ASSERT_TRUE(suspendService->registerCallback(cb));
+    bool retval = false;
+    controlService->registerCallback(cb, &retval);
+    ASSERT_TRUE(retval);
     checkLoop(numWakeups + 1);
     cb->disable();
 }
@@ -359,7 +403,9 @@ TEST_F(SystemSuspendTest, DeadCallback) {
     ASSERT_EXIT(
         {
             sp<MockCallback> cb = new MockCallback(nullptr);
-            ASSERT_TRUE(suspendService->registerCallback(cb));
+            bool retval = false;
+            controlService->registerCallback(cb, &retval);
+            ASSERT_TRUE(retval);
             std::exit(0);
         },
         ::testing::ExitedWithCode(0), "");
@@ -370,24 +416,27 @@ TEST_F(SystemSuspendTest, DeadCallback) {
 }
 
 // Callback that registers another callback.
-class CbRegisteringCb : public ISystemSuspendCallback {
+class CbRegisteringCb : public BnSuspendCallback {
    public:
-    CbRegisteringCb(sp<ISystemSuspend> suspendService) : mSuspendService(suspendService) {}
-    Return<void> notifyWakeup(bool x) {
+    CbRegisteringCb(sp<ISuspendControlService> controlService) : mControlService(controlService) {}
+    binder::Status notifyWakeup(bool x) {
         sp<MockCallback> cb = new MockCallback(nullptr);
         cb->disable();
-        mSuspendService->registerCallback(cb);
-        return Void();
+        bool retval = false;
+        mControlService->registerCallback(cb, &retval);
+        return binder::Status::ok();
     }
 
    private:
-    sp<ISystemSuspend> mSuspendService;
+    sp<ISuspendControlService> mControlService;
 };
 
 // Tests that callback registering another callback doesn't result in a deadlock.
 TEST_F(SystemSuspendTest, CallbackRegisterCallbackNoDeadlock) {
-    sp<CbRegisteringCb> cb = new CbRegisteringCb(suspendService);
-    ASSERT_TRUE(suspendService->registerCallback(cb));
+    sp<CbRegisteringCb> cb = new CbRegisteringCb(controlService);
+    bool retval = false;
+    controlService->registerCallback(cb, &retval);
+    ASSERT_TRUE(retval);
     checkLoop(3);
 }
 

@@ -16,6 +16,7 @@ cc_defaults {
     name: "system_suspend_defaults",
     shared_libs: [
         "libbase",
+        "libbinder",
         "libcutils",
         "libhidlbase",
         "libhidltransport",
@@ -68,11 +69,15 @@ cc_binary {
     ],
     init_rc: ["android.system.suspend@1.0-service.rc"],
     vintf_fragments: ["android.system.suspend@1.0-service.xml"],
-    shared_libs: ["android.system.suspend@1.0"],
+    shared_libs: [
+        "android.system.suspend@1.0",
+        "suspend_control_aidl_interface-cpp",
+    ],
     static_libs: ["SystemSuspendStatsProto"],
     srcs: [
-        "SystemSuspend.cpp",
         "main.cpp",
+        "SuspendControlService.cpp",
+        "SystemSuspend.cpp",
     ],
 }
 
@@ -86,9 +91,11 @@ cc_test {
     ],
     static_libs: [
         "android.system.suspend@1.0",
+        "suspend_control_aidl_interface-cpp",
         "libgmock",
     ],
     srcs: [
+        "SuspendControlService.cpp",
         "SystemSuspend.cpp",
         "SystemSuspendUnitTest.cpp"
     ],
