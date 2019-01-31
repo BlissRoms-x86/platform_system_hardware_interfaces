@@ -61,22 +61,33 @@ class WifiKeystoreHalTest : public Test {
 
         EXPECT_NE(nullptr, service.get());
 
-        deleteKey(kTestKeyName);
+        resetState();
     }
 
-    void TearDown() override { deleteKey(kTestKeyName); }
+    void TearDown() override { resetState(); }
+
+    /**
+     * Resets the relevant state of the system between tests
+     */
+    void resetState() {
+        for (uid_t uid : {UID_SELF, AID_WIFI}) {
+            deleteKey(kTestKeyName, uid);
+        }
+    }
 
     /**
      * Delete a key if it exists.
      *
      * @param keyName: name of the key to delete
+     * @param uid: the uid to delete the key on behalf of. Use
+     *        UID_SELF to use the process' uid.
      *
      * @return true iff the key existed and is now deleted, false otherwise.
      */
-    bool deleteKey(std::string keyName) {
+    bool deleteKey(std::string keyName, uid_t uid) {
         String16 keyName16(keyName.data(), keyName.size());
         int32_t result;
-        auto binder_result = service->del(keyName16, -1 /* process' uid*/, &result);
+        auto binder_result = service->del(keyName16, uid, &result);
         if (!binder_result.isOk()) {
             cout << "deleteKey: failed binder call" << endl;
             return false;
@@ -98,11 +109,13 @@ class WifiKeystoreHalTest : public Test {
      *
      * @param keyName: name of the key to generate
      * @param purpose: the purpose the generated key will support
+     * @param uid: the uid to generate the key on behalf of. Use
+     *        UID_SELF to use the process' uid.
      *
      * @return true iff the key was successfully generated and is
      * ready for use, false otherwise.
      */
-    bool generateKey(std::string keyName, KeyPurpose purpose) {
+    bool generateKey(std::string keyName, KeyPurpose purpose, uid_t uid) {
         constexpr uint32_t kAESKeySize = 256;
 
         int32_t aidl_return;
@@ -128,8 +141,8 @@ class WifiKeystoreHalTest : public Test {
         fflush(stdout);
         auto binder_result = service->generateKey(
             promise, keyName16, KeymasterArguments(key_parameters.hidl_data()), entropy,
-            -1,  // create key for process' uid
-            0,   // empty flags; pick default key provider
+            uid,  // create key for process' uid
+            0,    // empty flags; pick default key provider
             &aidl_return);
 
         if (!binder_result.isOk()) {
@@ -152,17 +165,19 @@ class WifiKeystoreHalTest : public Test {
      * Creates a TYPE_GENERIC key blob. This cannot be used for signing.
      *
      * @param keyName: name of the key to generate.
+     * @param uid: the uid to insert the key on behalf of. Use
+     *        UID_SELF to use the process' uid.
      *
      * @returns true iff the key was successfully created, false otherwise.
      */
-    bool insert(std::string keyName) {
+    bool insert(std::string keyName, uid_t uid) {
         int32_t aidl_return;
         vector<uint8_t> item;
 
         String16 keyName16(keyName.data(), keyName.size());
         auto binder_result = service->insert(keyName16, item,
-                                             -1,  // Use process' uid
-                                             0,   // empty flags; pick default key provider
+                                             uid,  // Use process' uid
+                                             0,    // empty flags; pick default key provider
                                              &aidl_return);
 
         if (!binder_result.isOk()) {
@@ -181,6 +196,7 @@ class WifiKeystoreHalTest : public Test {
 
     constexpr static const char kKeystoreServiceName[] = "android.security.keystore";
     constexpr static const char kTestKeyName[] = "TestKeyName";
+    constexpr static const int32_t UID_SELF = -1;
 
     IKeystore* keystore = nullptr;
     sp<IKeystoreService> service;
@@ -208,7 +224,7 @@ TEST_F(WifiKeystoreHalTest, Sign) {
     keystore->sign("", dataToSign, callback);
     EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
 
-    bool result = generateKey(kTestKeyName, KeyPurpose::SIGNING);
+    bool result = generateKey(kTestKeyName, KeyPurpose::SIGNING, UID_SELF);
     EXPECT_EQ(result, true);
 
     // The data to sign is empty, and a failure is expected
@@ -224,10 +240,10 @@ TEST_F(WifiKeystoreHalTest, Sign) {
 
     // Create a key which cannot sign; any signing attempt should fail.
 
-    result = deleteKey(kTestKeyName);
+    result = deleteKey(kTestKeyName, UID_SELF);
     EXPECT_EQ(result, true);
 
-    result = generateKey(kTestKeyName, KeyPurpose::ENCRYPTION);
+    result = generateKey(kTestKeyName, KeyPurpose::ENCRYPTION, UID_SELF);
     EXPECT_EQ(result, true);
 
     keystore->sign(kTestKeyName, dataToSign, callback);
@@ -236,14 +252,64 @@ TEST_F(WifiKeystoreHalTest, Sign) {
     // Generate a TYPE_GENERIC key instead of a TYPE_KEYMASTER_10 key.
     // This also cannot be used to sign.
 
-    result = deleteKey(kTestKeyName);
+    result = deleteKey(kTestKeyName, UID_SELF);
     EXPECT_EQ(result, true);
 
-    result = insert(kTestKeyName);
+    result = insert(kTestKeyName, UID_SELF);
     EXPECT_EQ(result, true);
 
     keystore->sign(kTestKeyName, dataToSign, callback);
     EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+}
+
+/**
+ * Test for the Wifi Keystore HAL's getBlob() call.
+ */
+TEST_F(WifiKeystoreHalTest, GetBlob) {
+    IKeystore::KeystoreStatusCode statusCode;
+
+    auto callback = [&statusCode](IKeystore::KeystoreStatusCode status,
+                                  const ::android::hardware::hidl_vec<uint8_t>& /*value*/) {
+        statusCode = status;
+        return;
+    };
+
+    // Attempting to get a blob on a non-existent key should fail.
+
+    statusCode = IKeystore::KeystoreStatusCode::SUCCESS;
+    keystore->getBlob(nullptr, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    statusCode = IKeystore::KeystoreStatusCode::SUCCESS;
+    keystore->getBlob("", callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    statusCode = IKeystore::KeystoreStatusCode::SUCCESS;
+    keystore->getBlob(kTestKeyName, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    // The HAL is expecting the key to belong to the wifi user.
+    // If the key belongs to another user's space it should fail.
+
+    bool result = insert(kTestKeyName, UID_SELF);
+    EXPECT_EQ(result, true);
+
+    keystore->getBlob(kTestKeyName, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+
+    result = deleteKey(kTestKeyName, UID_SELF);
+    EXPECT_EQ(result, true);
+
+    // Accessing the key belonging to the wifi user should succeed.
+
+    result = insert(kTestKeyName, AID_WIFI);
+    EXPECT_EQ(result, true);
+
+    keystore->getBlob(kTestKeyName, callback);
+    EXPECT_EQ(IKeystore::KeystoreStatusCode::SUCCESS, statusCode);
+
+    result = deleteKey(kTestKeyName, AID_WIFI);
+    EXPECT_EQ(result, true);
 }
 
 }  // namespace
