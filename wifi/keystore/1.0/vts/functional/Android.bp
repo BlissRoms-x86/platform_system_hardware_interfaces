@@ -28,6 +28,12 @@ cc_test {
         "libnativehelper",
         "libutils",
         "android.system.wifi.keystore@1.0",
+        "libwifikeystorehal",
+        "libkeystore_binder",
+        "libbinder",
+        "libkeystore_aidl",
+        "libkeystore_parcelables",
+        "libkeymaster4support",
     ],
     static_libs: ["VtsHalHidlTargetTestBase"],
     cflags: [
