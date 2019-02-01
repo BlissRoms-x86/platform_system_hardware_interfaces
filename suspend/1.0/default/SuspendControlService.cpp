@@ -62,6 +62,11 @@ binder::Status SuspendControlService::registerCallback(const sp<ISuspendCallback
     return retOk(true, _aidl_return);
 }
 
+binder::Status SuspendControlService::forceSuspend(bool* _aidl_return) {
+    const auto suspendService = mSuspend.promote();
+    return retOk(suspendService != nullptr && suspendService->forceSuspend(), _aidl_return);
+}
+
 void SuspendControlService::binderDied(const wp<IBinder>& who) {
     auto l = std::lock_guard(mCallbackLock);
     mCallbacks.erase(findCb(who));
