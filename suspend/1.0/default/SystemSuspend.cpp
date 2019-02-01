@@ -113,6 +113,22 @@ bool SystemSuspend::enableAutosuspend() {
     return true;
 }
 
+bool SystemSuspend::forceSuspend() {
+    //  We are forcing the system to suspend. This particular call ignores all
+    //  existing wakelocks (full or partial). It does not cancel the wakelocks
+    //  or reset mSuspendCounter, it just ignores them.  When the system
+    //  returns from suspend, the wakelocks and SuspendCounter will not have
+    //  changed.
+    auto counterLock = std::unique_lock(mCounterLock);
+    bool success = WriteStringToFd(kSleepState, mStateFd);
+    counterLock.unlock();
+
+    if (!success) {
+        PLOG(VERBOSE) << "error writing to /sys/power/state for forceSuspend";
+    }
+    return success;
+}
+
 Return<sp<IWakeLock>> SystemSuspend::acquireWakeLock(WakeLockType /* type */,
                                                      const hidl_string& name) {
     auto pid = getCallingPid();

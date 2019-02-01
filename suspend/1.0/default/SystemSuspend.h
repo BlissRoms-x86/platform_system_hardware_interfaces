@@ -77,6 +77,7 @@ class SystemSuspend : public ISystemSuspend {
     void decSuspendCounter();
     void deleteWakeLockStatsEntry(WakeLockIdType id);
     bool enableAutosuspend();
+    bool forceSuspend();
 
    private:
     void initAutosuspend();
