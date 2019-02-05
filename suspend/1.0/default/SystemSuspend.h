@@ -17,9 +17,10 @@
 #ifndef ANDROID_SYSTEM_SYSTEM_SUSPEND_V1_0_H
 #define ANDROID_SYSTEM_SYSTEM_SUSPEND_V1_0_H
 
+#include "SuspendControlService.h"
+
 #include <android-base/unique_fd.h>
 #include <android/system/suspend/1.0/ISystemSuspend.h>
-#include <android/system/suspend/1.0/ISystemSuspendCallback.h>
 #include <hidl/HidlTransportSupport.h>
 #include <system/hardware/interfaces/suspend/1.0/default/SystemSuspendStats.pb.h>
 
@@ -65,18 +66,17 @@ class WakeLock : public IWakeLock {
     WakeLockIdType mId;
 };
 
-class SystemSuspend : public ISystemSuspend, public hidl_death_recipient {
+class SystemSuspend : public ISystemSuspend {
    public:
     SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, size_t maxStatsEntries,
-                  std::chrono::milliseconds baseSleepTime);
-    Return<bool> enableAutosuspend() override;
+                  std::chrono::milliseconds baseSleepTime,
+                  const sp<SuspendControlService>& controlService);
     Return<sp<IWakeLock>> acquireWakeLock(WakeLockType type, const hidl_string& name) override;
-    Return<bool> registerCallback(const sp<ISystemSuspendCallback>& cb) override;
     Return<void> debug(const hidl_handle& handle, const hidl_vec<hidl_string>& options) override;
-    void serviceDied(uint64_t /* cookie */, const wp<IBase>& service);
     void incSuspendCounter();
     void decSuspendCounter();
     void deleteWakeLockStatsEntry(WakeLockIdType id);
+    bool enableAutosuspend();
 
    private:
     void initAutosuspend();
@@ -99,19 +99,13 @@ class SystemSuspend : public ISystemSuspend, public hidl_death_recipient {
     std::map<TimestampType, WakeLockIdType> mLruWakeLockId;
     SystemSuspendStats mStats;
 
-    using CbType = sp<ISystemSuspendCallback>;
-    std::mutex mCallbackLock;
-    std::vector<CbType> mCallbacks;
-    std::vector<CbType>::iterator findCb(const sp<IBase>& cb) {
-        return std::find_if(mCallbacks.begin(), mCallbacks.end(),
-                            [&cb](const CbType& i) { return interfacesEqual(i, cb); });
-    }
-
     // Amount of sleep time between consecutive iterations of the suspend loop.
     std::chrono::milliseconds mBaseSleepTime;
     std::chrono::milliseconds mSleepTime;
     // Updates sleep time depending on the result of suspend attempt.
     void updateSleepTime(bool success);
+
+    sp<SuspendControlService> mControlService;
 };
 
 }  // namespace V1_0

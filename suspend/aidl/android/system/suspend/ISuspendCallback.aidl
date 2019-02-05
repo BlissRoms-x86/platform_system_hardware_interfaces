@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2019 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,18 @@
  * limitations under the License.
  */
 
-package android.system.suspend@1.0;
+package android.system.suspend;
 
-interface ISystemSuspendCallback {
+/**
+ * Callback interface for monitoring system-suspend events.
+ * @hide
+ */
+interface ISuspendCallback
+{
     /**
-     * An implementation of ISystemSuspend must call notifyWakeup after every
-     * system wakeup.
+     * An implementation of ISuspendControlService must call notifyWakeup after every system wakeup.
      *
      * @param success whether previous system suspend attempt was successful.
      */
-    notifyWakeup(bool success);
-};
+     void notifyWakeup(boolean success);
+}
