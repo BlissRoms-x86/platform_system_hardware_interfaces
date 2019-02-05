@@ -33,7 +33,6 @@
 
 using ::android::base::ReadFdToString;
 using ::android::base::WriteStringToFd;
-using ::android::hardware::IPCThreadState;
 using ::android::hardware::Void;
 using ::std::string;
 
@@ -55,7 +54,7 @@ string readFd(int fd) {
 }
 
 static inline int getCallingPid() {
-    return IPCThreadState::self()->getCallingPid();
+    return ::android::hardware::IPCThreadState::self()->getCallingPid();
 }
 
 static inline WakeLockIdType getWakeLockId(int pid, const string& name) {
@@ -90,15 +89,19 @@ void WakeLock::releaseOnce() {
 }
 
 SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, size_t maxStatsEntries,
-                             std::chrono::milliseconds baseSleepTime)
+                             std::chrono::milliseconds baseSleepTime,
+                             const sp<SuspendControlService>& controlService)
     : mSuspendCounter(0),
       mWakeupCountFd(std::move(wakeupCountFd)),
       mStateFd(std::move(stateFd)),
       mMaxStatsEntries(maxStatsEntries),
       mBaseSleepTime(baseSleepTime),
-      mSleepTime(baseSleepTime) {}
+      mSleepTime(baseSleepTime),
+      mControlService(controlService) {
+    mControlService->setSuspendService(this);
+}
 
-Return<bool> SystemSuspend::enableAutosuspend() {
+bool SystemSuspend::enableAutosuspend() {
     static bool initialized = false;
     if (initialized) {
         LOG(ERROR) << "Autosuspend already started.";
@@ -136,28 +139,6 @@ Return<sp<IWakeLock>> SystemSuspend::acquireWakeLock(WakeLockType /* type */,
         }
     }
     return wl;
-}
-
-Return<bool> SystemSuspend::registerCallback(const sp<ISystemSuspendCallback>& cb) {
-    if (!cb) {
-        return false;
-    }
-    auto l = std::lock_guard(mCallbackLock);
-    if (findCb(cb) == mCallbacks.end()) {
-        auto linkRet = cb->linkToDeath(this, 0 /* cookie */);
-        if (!linkRet.withDefault(false)) {
-            LOG(ERROR) << __func__ << "Cannot link to death: "
-                       << (linkRet.isOk() ? "linkToDeath returns false" : linkRet.description());
-            return false;
-        }
-        mCallbacks.push_back(cb);
-    }
-    return true;
-}
-
-void SystemSuspend::serviceDied(uint64_t, const wp<IBase>& service) {
-    auto l = std::lock_guard(mCallbackLock);
-    mCallbacks.erase(findCb(service.promote()));
 }
 
 Return<void> SystemSuspend::debug(const hidl_handle& handle,
@@ -231,16 +212,8 @@ void SystemSuspend::initAutosuspend() {
                 PLOG(VERBOSE) << "error writing to /sys/power/state";
             }
 
-            // A callback could potentially modify mCallbacks (e.g. via registerCallback). That must
-            // not result in a deadlock. To that end, we make a copy of mCallbacks and release
-            // mCallbackLock before calling the copied callbacks.
-            auto callbackLock = std::unique_lock(mCallbackLock);
-            auto callbacksCopy = mCallbacks;
-            callbackLock.unlock();
+            mControlService->notifyWakeup(success);
 
-            for (const auto& callback : callbacksCopy) {
-                callback->notifyWakeup(success).isOk();  // ignore errors
-            }
             updateSleepTime(success);
         }
     });

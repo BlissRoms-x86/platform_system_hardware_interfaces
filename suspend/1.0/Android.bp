@@ -6,7 +6,6 @@ hidl_interface {
     },
     srcs: [
         "ISystemSuspend.hal",
-        "ISystemSuspendCallback.hal",
         "IWakeLock.hal",
     ],
     interfaces: [
@@ -14,4 +13,3 @@ hidl_interface {
     ],
     gen_java: false,
 }
-
