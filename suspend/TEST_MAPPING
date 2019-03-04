@@ -1,5 +1,5 @@
 {
-  "presubmit": [
+  "postsubmit": [
     {
       "name": "SystemSuspendV1_0UnitTest"
     }
