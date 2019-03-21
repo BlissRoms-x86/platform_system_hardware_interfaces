@@ -65,11 +65,10 @@ namespace android {
 static constexpr char kServiceName[] = "TestService";
 static constexpr char kControlServiceName[] = "TestControlService";
 
-static bool isReadBlocked(int fd) {
+static bool isReadBlocked(int fd, int timeout_ms = 20) {
     struct pollfd pfd {
         .fd = fd, .events = POLLIN,
     };
-    int timeout_ms = 20;
     return poll(&pfd, 1, timeout_ms) == 0;
 }
 
@@ -168,7 +167,7 @@ class SystemSuspendTest : public ::testing::Test {
         ASSERT_TRUE(WriteStringToFd(wakeupCount, wakeupCountFd));
     }
 
-    bool isSystemSuspendBlocked() { return isReadBlocked(stateFd); }
+    bool isSystemSuspendBlocked(int timeout_ms = 20) { return isReadBlocked(stateFd, timeout_ms); }
 
     sp<IWakeLock> acquireWakeLock() {
         return suspendService->acquireWakeLock(WakeLockType::PARTIAL, "TestLock");
@@ -288,7 +287,9 @@ TEST_F(SystemSuspendTest, CleanupOnAbort) {
         ::testing::KilledBySignal(SIGABRT), "");
     ASSERT_TRUE(isSystemSuspendBlocked());
     unblockSystemSuspendFromWakeupCount();
-    ASSERT_FALSE(isSystemSuspendBlocked());
+    // Timing of the wake lock clean-up after process death is scheduler-dependent.
+    // Increase the timeout to avoid flakes.
+    ASSERT_FALSE(isSystemSuspendBlocked(200));
 }
 
 // Test that debug dump has correct information about WakeLocks.
