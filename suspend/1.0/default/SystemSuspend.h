@@ -53,7 +53,7 @@ TimestampType getEpochTimeNow();
 
 class WakeLock : public IWakeLock {
    public:
-    WakeLock(SystemSuspend* systemSuspend, const WakeLockIdType& id);
+    WakeLock(SystemSuspend* systemSuspend, const WakeLockIdType& id, const std::string& name);
     ~WakeLock();
 
     Return<void> release();
@@ -64,17 +64,18 @@ class WakeLock : public IWakeLock {
 
     SystemSuspend* mSystemSuspend;
     WakeLockIdType mId;
+    std::string mName;
 };
 
 class SystemSuspend : public ISystemSuspend {
    public:
     SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, size_t maxStatsEntries,
                   std::chrono::milliseconds baseSleepTime,
-                  const sp<SuspendControlService>& controlService);
+                  const sp<SuspendControlService>& controlService, bool useSuspendCounter = true);
     Return<sp<IWakeLock>> acquireWakeLock(WakeLockType type, const hidl_string& name) override;
     Return<void> debug(const hidl_handle& handle, const hidl_vec<hidl_string>& options) override;
-    void incSuspendCounter();
-    void decSuspendCounter();
+    void incSuspendCounter(const std::string& name);
+    void decSuspendCounter(const std::string& name);
     void deleteWakeLockStatsEntry(WakeLockIdType id);
     bool enableAutosuspend();
     bool forceSuspend();
@@ -107,6 +108,13 @@ class SystemSuspend : public ISystemSuspend {
     void updateSleepTime(bool success);
 
     sp<SuspendControlService> mControlService;
+
+    // If true, use mSuspendCounter to keep track of native wake locks. Otherwise, rely on
+    // /sys/power/wake_lock interface to block suspend.
+    // TODO(b/128923994): remove dependency on /sys/power/wake_lock interface.
+    bool mUseSuspendCounter;
+    unique_fd mWakeLockFd;
+    unique_fd mWakeUnlockFd;
 };
 
 }  // namespace V1_0
