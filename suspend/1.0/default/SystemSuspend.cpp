@@ -42,6 +42,10 @@ namespace suspend {
 namespace V1_0 {
 
 static const char kSleepState[] = "mem";
+// TODO(b/128923994): we only need /sys/power/wake_[un]lock to export debugging info via
+// /sys/kernel/debug/wakeup_sources.
+static constexpr char kSysPowerWakeLock[] = "/sys/power/wake_lock";
+static constexpr char kSysPowerWakeUnlock[] = "/sys/power/wake_unlock";
 
 // This function assumes that data in fd is small enough that it can be read in one go.
 // We use this function instead of the ones available in libbase because it doesn't block
@@ -67,9 +71,9 @@ TimestampType getEpochTimeNow() {
     return std::chrono::duration_cast<std::chrono::microseconds>(timeSinceEpoch).count();
 }
 
-WakeLock::WakeLock(SystemSuspend* systemSuspend, const WakeLockIdType& id)
-    : mReleased(), mSystemSuspend(systemSuspend), mId(id) {
-    mSystemSuspend->incSuspendCounter();
+WakeLock::WakeLock(SystemSuspend* systemSuspend, const WakeLockIdType& id, const string& name)
+    : mReleased(), mSystemSuspend(systemSuspend), mId(id), mName(name) {
+    mSystemSuspend->incSuspendCounter(mName);
 }
 
 WakeLock::~WakeLock() {
@@ -83,22 +87,37 @@ Return<void> WakeLock::release() {
 
 void WakeLock::releaseOnce() {
     std::call_once(mReleased, [this]() {
-        mSystemSuspend->decSuspendCounter();
+        mSystemSuspend->decSuspendCounter(mName);
         mSystemSuspend->deleteWakeLockStatsEntry(mId);
     });
 }
 
 SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, size_t maxStatsEntries,
                              std::chrono::milliseconds baseSleepTime,
-                             const sp<SuspendControlService>& controlService)
+                             const sp<SuspendControlService>& controlService,
+                             bool useSuspendCounter)
     : mSuspendCounter(0),
       mWakeupCountFd(std::move(wakeupCountFd)),
       mStateFd(std::move(stateFd)),
       mMaxStatsEntries(maxStatsEntries),
       mBaseSleepTime(baseSleepTime),
       mSleepTime(baseSleepTime),
-      mControlService(controlService) {
+      mControlService(controlService),
+      mUseSuspendCounter(useSuspendCounter),
+      mWakeLockFd(-1),
+      mWakeUnlockFd(-1) {
     mControlService->setSuspendService(this);
+
+    if (!mUseSuspendCounter) {
+        mWakeLockFd.reset(TEMP_FAILURE_RETRY(open(kSysPowerWakeLock, O_CLOEXEC | O_RDWR)));
+        if (mWakeLockFd < 0) {
+            PLOG(ERROR) << "error opening " << kSysPowerWakeLock;
+        }
+        mWakeUnlockFd.reset(TEMP_FAILURE_RETRY(open(kSysPowerWakeUnlock, O_CLOEXEC | O_RDWR)));
+        if (mWakeUnlockFd < 0) {
+            PLOG(ERROR) << "error opening " << kSysPowerWakeUnlock;
+        }
+    }
 }
 
 bool SystemSuspend::enableAutosuspend() {
@@ -133,7 +152,7 @@ Return<sp<IWakeLock>> SystemSuspend::acquireWakeLock(WakeLockType /* type */,
                                                      const hidl_string& name) {
     auto pid = getCallingPid();
     auto wlId = getWakeLockId(pid, name);
-    IWakeLock* wl = new WakeLock{this, wlId};
+    IWakeLock* wl = new WakeLock{this, wlId, name};
     {
         auto l = std::lock_guard(mStatsLock);
 
@@ -174,15 +193,27 @@ Return<void> SystemSuspend::debug(const hidl_handle& handle,
     return Void();
 }
 
-void SystemSuspend::incSuspendCounter() {
+void SystemSuspend::incSuspendCounter(const string& name) {
     auto l = std::lock_guard(mCounterLock);
-    mSuspendCounter++;
+    if (mUseSuspendCounter) {
+        mSuspendCounter++;
+    } else {
+        if (!WriteStringToFd(name, mWakeLockFd)) {
+            PLOG(ERROR) << "error writing " << name << " to " << kSysPowerWakeLock;
+        }
+    }
 }
 
-void SystemSuspend::decSuspendCounter() {
+void SystemSuspend::decSuspendCounter(const string& name) {
     auto l = std::lock_guard(mCounterLock);
-    if (--mSuspendCounter == 0) {
-        mCounterCondVar.notify_one();
+    if (mUseSuspendCounter) {
+        if (--mSuspendCounter == 0) {
+            mCounterCondVar.notify_one();
+        }
+    } else {
+        if (!WriteStringToFd(name, mWakeUnlockFd)) {
+            PLOG(ERROR) << "error writing " << name << " to " << kSysPowerWakeUnlock;
+        }
     }
 }
 
