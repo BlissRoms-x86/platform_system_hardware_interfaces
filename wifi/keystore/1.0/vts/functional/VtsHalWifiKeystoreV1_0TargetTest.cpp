@@ -17,12 +17,14 @@
 #include <android-base/logging.h>
 
 #include <VtsHalHidlTargetTestBase.h>
+#include <android/security/keystore/IKeystoreService.h>
+#include <android/system/wifi/keystore/1.0/IKeystore.h>
+#include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
 #include <keymasterV4_0/authorization_set.h>
 #include <keystore/keystore_promises.h>
 #include <private/android_filesystem_config.h>
 #include <utils/String16.h>
-#include <wifikeystorehal/keystore.h>
 
 using namespace std;
 using namespace ::testing;
@@ -30,7 +32,8 @@ using namespace android;
 using namespace android::binder;
 using namespace android::security::keystore;
 using namespace android::security::keymaster;
-using namespace android::system::wifi::keystore::V1_0;
+using android::security::keystore::IKeystoreService;
+using android::system::wifi::keystore::V1_0::IKeystore;
 
 int main(int argc, char** argv) {
     // Start thread pool for Binder
@@ -52,7 +55,8 @@ enum KeyPurpose {
 class WifiKeystoreHalTest : public Test {
    protected:
     void SetUp() override {
-        keystore = implementation::HIDL_FETCH_IKeystore(nullptr);
+        keystore = IKeystore::getService();
+        ASSERT_TRUE(keystore);
 
         sp<android::IServiceManager> service_manager = android::defaultServiceManager();
         sp<android::IBinder> keystore_binder =
@@ -198,7 +202,7 @@ class WifiKeystoreHalTest : public Test {
     constexpr static const char kTestKeyName[] = "TestKeyName";
     constexpr static const int32_t UID_SELF = -1;
 
-    IKeystore* keystore = nullptr;
+    sp<IKeystore> keystore;
     sp<IKeystoreService> service;
 };
 
@@ -206,7 +210,7 @@ class WifiKeystoreHalTest : public Test {
  * Test for the Wifi Keystore HAL's sign() call.
  */
 TEST_F(WifiKeystoreHalTest, Sign) {
-    IKeystore::KeystoreStatusCode statusCode;
+    ::android::system::wifi::keystore::V1_0::IKeystore::KeystoreStatusCode statusCode;
 
     auto callback = [&statusCode](IKeystore::KeystoreStatusCode status,
                                   const ::android::hardware::hidl_vec<uint8_t>& /*value*/) {
