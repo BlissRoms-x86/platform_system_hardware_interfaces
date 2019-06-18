@@ -40,4 +40,9 @@ interface ISuspendControlService
      * @return true on success, false otherwise.
      */
     boolean registerCallback(ISuspendCallback callback);
+
+    /**
+     * Suspends the system even if there are wakelocks being held.
+     */
+    boolean forceSuspend();
 }

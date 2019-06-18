@@ -78,6 +78,7 @@ class SystemSuspend : public ISystemSuspend {
     void decSuspendCounter(const std::string& name);
     void deleteWakeLockStatsEntry(WakeLockIdType id);
     bool enableAutosuspend();
+    bool forceSuspend();
 
    private:
     void initAutosuspend();

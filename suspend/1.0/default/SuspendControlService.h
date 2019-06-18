@@ -38,6 +38,7 @@ class SuspendControlService : public BnSuspendControlService,
     binder::Status enableAutosuspend(bool* _aidl_return) override;
     binder::Status registerCallback(const sp<ISuspendCallback>& callback,
                                     bool* _aidl_return) override;
+    binder::Status forceSuspend(bool* _aidl_return) override;
     void binderDied(const wp<IBinder>& who) override;
 
     void setSuspendService(const wp<SystemSuspend>& suspend);
