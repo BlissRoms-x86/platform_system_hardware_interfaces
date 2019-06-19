@@ -26,7 +26,6 @@
 #include <binder/ProcessState.h>
 #include <cutils/native_handle.h>
 #include <gmock/gmock.h>
-#include <google/protobuf/text_format.h>
 #include <gtest/gtest.h>
 #include <hidl/HidlTransportSupport.h>
 
@@ -35,6 +34,7 @@
 #include <sys/types.h>
 
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdlib>
 #include <future>
@@ -51,12 +51,14 @@ using android::hardware::Return;
 using android::hardware::Void;
 using android::system::suspend::BnSuspendCallback;
 using android::system::suspend::ISuspendControlService;
+using android::system::suspend::WakeLockInfo;
 using android::system::suspend::V1_0::getEpochTimeNow;
 using android::system::suspend::V1_0::ISystemSuspend;
 using android::system::suspend::V1_0::IWakeLock;
 using android::system::suspend::V1_0::readFd;
 using android::system::suspend::V1_0::SuspendControlService;
 using android::system::suspend::V1_0::SystemSuspend;
+using android::system::suspend::V1_0::TimestampType;
 using android::system::suspend::V1_0::WakeLockType;
 using namespace std::chrono_literals;
 
@@ -169,31 +171,14 @@ class SystemSuspendTest : public ::testing::Test {
 
     bool isSystemSuspendBlocked(int timeout_ms = 20) { return isReadBlocked(stateFd, timeout_ms); }
 
-    sp<IWakeLock> acquireWakeLock() {
-        return suspendService->acquireWakeLock(WakeLockType::PARTIAL, "TestLock");
-    }
-
-    SystemSuspendStats getDebugDump() {
-        // Index 0 corresponds to the read end of the pipe; 1 to the write end.
-        int fds[2];
-        pipe2(fds, O_NONBLOCK);
-        native_handle_t* handle = native_handle_create(1, 0);
-        handle->data[0] = fds[1];
-
-        suspendService->debug(handle, {});
-        SystemSuspendStats stats{};
-        google::protobuf::TextFormat::ParseFromString(readFd(fds[0]), &stats);
-
-        native_handle_close(handle);
-        close(fds[0]);
-        close(fds[1]);
-
-        return stats;
+    sp<IWakeLock> acquireWakeLock(const std::string& name = "TestLock") {
+        return suspendService->acquireWakeLock(WakeLockType::PARTIAL, name);
     }
 
     size_t getActiveWakeLockCount() {
-        const auto& wlStats = getDebugDump().wl_stats();
-        return count_if(wlStats.begin(), wlStats.end(), [](auto x) { return x.second.active(); });
+        std::vector<WakeLockInfo> wlStats;
+        controlService->getWakeLockStats(&wlStats);
+        return count_if(wlStats.begin(), wlStats.end(), [](auto entry) { return entry.isActive; });
     }
 
     void checkLoop(int numIter) {
@@ -292,43 +277,62 @@ TEST_F(SystemSuspendTest, CleanupOnAbort) {
     ASSERT_FALSE(isSystemSuspendBlocked(200));
 }
 
-// Test that debug dump has correct information about WakeLocks.
-TEST_F(SystemSuspendTest, DebugDumpWakeLocks) {
-    uint64_t timeNow = getEpochTimeNow();
+// Test that getWakeLockStats has correct information about WakeLocks.
+TEST_F(SystemSuspendTest, GetWakeLockStats) {
+    TimestampType acquireTime = getEpochTimeNow();
+    TimestampType releaseTime;
+    std::string fakeWlName = "FakeLock";
     {
-        sp<IWakeLock> wl = acquireWakeLock();
-        auto wlStats = getDebugDump().wl_stats();
+        sp<IWakeLock> fakeLock = acquireWakeLock(fakeWlName);
+        std::vector<WakeLockInfo> wlStats;
+        controlService->getWakeLockStats(&wlStats);
         ASSERT_EQ(wlStats.size(), 1);
-        ASSERT_EQ(wlStats.begin()->second.name(), "TestLock");
-        ASSERT_EQ(wlStats.begin()->second.pid(), getpid());
-        ASSERT_EQ(wlStats.begin()->second.active(), true);
-        ASSERT_GT(wlStats.begin()->second.last_updated(), timeNow);
+        ASSERT_EQ(wlStats.begin()->name, fakeWlName);
+        ASSERT_EQ(wlStats.begin()->pid, getpid());
+        ASSERT_EQ(wlStats.begin()->activeCount, 1);
+        ASSERT_EQ(wlStats.begin()->isActive, true);
+        ASSERT_EQ(wlStats.begin()->maxTime, 0);
+        ASSERT_EQ(wlStats.begin()->totalTime, 0);
+
+        // The updated timestamp is not deterministic. However, all SystemSuspend HAL calls run
+        // in the order of microseconds, so in practice the timestamp should be within 1ms.
+        ASSERT_LT(std::abs(wlStats.begin()->activeSince - acquireTime), 1000);
+        ASSERT_LT(std::abs(wlStats.begin()->lastChange - acquireTime), 1000);
+
         // We sleep so that the wake lock stats entry get updated with a different timestamp.
         std::this_thread::sleep_for(1s);
+        releaseTime = getEpochTimeNow();
     }
-    auto wlStats = getDebugDump().wl_stats();
+    std::vector<WakeLockInfo> wlStats;
+    controlService->getWakeLockStats(&wlStats);
     ASSERT_EQ(wlStats.size(), 1);
-    ASSERT_EQ(wlStats.begin()->second.name(), "TestLock");
-    ASSERT_EQ(wlStats.begin()->second.pid(), getpid());
-    ASSERT_EQ(wlStats.begin()->second.active(), false);
-    // The updated timestamp is not deterministic. However, all SystemSuspend HAL calls run in the
-    // order of microseconds, so in practice the updated timestamp should be 1 second newer than the
-    // old one.
-    ASSERT_GT(wlStats.begin()->second.last_updated(), timeNow + 1000000);
+    ASSERT_EQ(wlStats.begin()->name, fakeWlName);
+    ASSERT_EQ(wlStats.begin()->pid, getpid());
+    ASSERT_EQ(wlStats.begin()->activeCount, 1);
+    ASSERT_EQ(wlStats.begin()->isActive, false);
+    ASSERT_LT(std::abs(wlStats.begin()->maxTime - (releaseTime - acquireTime)), 1000);
+    ASSERT_LT(std::abs(wlStats.begin()->totalTime - (releaseTime - acquireTime)), 1000);
+    ASSERT_LT(std::abs(wlStats.begin()->activeSince - acquireTime), 1000);
+    ASSERT_LT(std::abs(wlStats.begin()->lastChange - releaseTime), 1000);
 }
 
-// Test that the least recently used wake stats entry is evicted after a given threshold.
-TEST_F(SystemSuspendTest, LruWakeLockStatsEviction) {
-    suspendService->acquireWakeLock(WakeLockType::PARTIAL, "foo");
-    suspendService->acquireWakeLock(WakeLockType::PARTIAL, "bar");
-    suspendService->acquireWakeLock(WakeLockType::PARTIAL, "bar");
-    suspendService->acquireWakeLock(WakeLockType::PARTIAL, "baz");
+// Test that the least recently used wake lock stats entry is evicted after a given threshold.
+TEST_F(SystemSuspendTest, WakeLockStatsLruEviction) {
+    std::string fakeWlName1 = "FakeLock1";
+    std::string fakeWlName2 = "FakeLock2";
 
-    auto wlStats = getDebugDump().wl_stats();
+    acquireWakeLock(fakeWlName1);
+    acquireWakeLock(fakeWlName2);
+
+    std::vector<WakeLockInfo> wlStats;
+    controlService->getWakeLockStats(&wlStats);
+
     // Max number of stats entries was set to 1 in SystemSuspend constructor.
     ASSERT_EQ(wlStats.size(), 1);
-    ASSERT_EQ(wlStats.begin()->second.name(), "baz");
-    ASSERT_EQ(wlStats.begin()->second.active(), false);
+    ASSERT_EQ(wlStats.begin()->name, fakeWlName2);
+    ASSERT_EQ(wlStats.begin()->pid, getpid());
+    ASSERT_EQ(wlStats.begin()->activeCount, 1);
+    ASSERT_EQ(wlStats.begin()->isActive, false);
 }
 
 // Stress test acquiring/releasing WakeLocks.
