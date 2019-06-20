@@ -43,7 +43,6 @@ using namespace std::chrono_literals;
 class SystemSuspend;
 
 std::string readFd(int fd);
-TimestampType getEpochTimeNow();
 
 class WakeLock : public IWakeLock {
    public:
@@ -74,6 +73,7 @@ class SystemSuspend : public ISystemSuspend {
 
     const WakeLockEntryList& getStatsList() const;
     void updateWakeLockStatOnRelease(const std::string& name, int pid, TimestampType epochTimeNow);
+    void updateStatsNow();
 
    private:
     void initAutosuspend();

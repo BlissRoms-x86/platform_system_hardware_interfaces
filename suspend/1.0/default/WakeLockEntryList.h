@@ -33,6 +33,8 @@ namespace V1_0 {
 
 using TimestampType = int64_t;
 
+TimestampType getEpochTimeNow();
+
 /*
  * WakeLockEntryList to collect wake lock stats.
  * This class is thread safe.
@@ -42,6 +44,9 @@ class WakeLockEntryList {
     WakeLockEntryList(size_t capacity);
     void updateOnAcquire(const std::string& name, int pid, TimestampType epochTimeNow);
     void updateOnRelease(const std::string& name, int pid, TimestampType epochTimeNow);
+    // updateNow() should be called before getWakeLockStats() to ensure stats are
+    // updated wrt the current time.
+    void updateNow();
     void getWakeLockStats(std::vector<WakeLockInfo>* aidl_return) const;
 
    private:
