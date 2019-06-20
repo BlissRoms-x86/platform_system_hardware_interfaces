@@ -82,7 +82,7 @@ int main() {
 
     sp<SystemSuspend> suspend =
         new SystemSuspend(std::move(wakeupCountFd), std::move(stateFd), kWakeLockStatsCapacity,
-                          100ms /* baseSleepTime */, suspendControl, false /* mUseSuspendCounter*/);
+                          100ms /* baseSleepTime */, suspendControl, true /* mUseSuspendCounter*/);
     status_t status = suspend->registerAsService();
     if (android::OK != status) {
         LOG(FATAL) << "Unable to register system-suspend service: " << status;
