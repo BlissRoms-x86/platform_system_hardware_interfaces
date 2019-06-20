@@ -291,8 +291,8 @@ TEST_F(SystemSuspendTest, GetWakeLockStats) {
         ASSERT_EQ(wlStats.begin()->pid, getpid());
         ASSERT_EQ(wlStats.begin()->activeCount, 1);
         ASSERT_EQ(wlStats.begin()->isActive, true);
-        ASSERT_EQ(wlStats.begin()->maxTime, 0);
-        ASSERT_EQ(wlStats.begin()->totalTime, 0);
+        ASSERT_GT(wlStats.begin()->maxTime, 0);
+        ASSERT_GT(wlStats.begin()->totalTime, 0);
 
         // The updated timestamp is not deterministic. However, all SystemSuspend HAL calls run
         // in the order of microseconds, so in practice the timestamp should be within 1ms.
