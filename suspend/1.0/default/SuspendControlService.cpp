@@ -91,6 +91,8 @@ binder::Status SuspendControlService::getWakeLockStats(std::vector<WakeLockInfo>
         return binder::Status::fromExceptionCode(binder::Status::Exception::EX_NULL_POINTER,
                                                  String8("Null reference to suspendService"));
     }
+
+    suspendService->updateStatsNow();
     suspendService->getStatsList().getWakeLockStats(_aidl_return);
 
     return binder::Status::ok();
