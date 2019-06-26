@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-#include "SuspendControlService.h"
-#include "SystemSuspend.h"
-
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/unique_fd.h>
@@ -28,7 +25,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <hidl/HidlTransportSupport.h>
-
 #include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -40,6 +36,9 @@
 #include <future>
 #include <string>
 #include <thread>
+
+#include "SuspendControlService.h"
+#include "SystemSuspend.h"
 
 using android::sp;
 using android::base::Socketpair;
