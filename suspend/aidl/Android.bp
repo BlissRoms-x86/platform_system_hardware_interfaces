@@ -6,4 +6,9 @@ aidl_interface {
         "android/system/suspend/ISuspendCallback.aidl",
         "android/system/suspend/WakeLockInfo.aidl",
     ],
+    backend: {
+        java: {
+            sdk_version: "28",
+        },
+    },
 }
