@@ -17,9 +17,6 @@
 #ifndef ANDROID_SYSTEM_SYSTEM_SUSPEND_V1_0_H
 #define ANDROID_SYSTEM_SYSTEM_SUSPEND_V1_0_H
 
-#include "SuspendControlService.h"
-#include "WakeLockEntryList.h"
-
 #include <android-base/unique_fd.h>
 #include <android/system/suspend/1.0/ISystemSuspend.h>
 #include <hidl/HidlTransportSupport.h>
@@ -27,6 +24,9 @@
 #include <condition_variable>
 #include <mutex>
 #include <string>
+
+#include "SuspendControlService.h"
+#include "WakeLockEntryList.h"
 
 namespace android {
 namespace system {
