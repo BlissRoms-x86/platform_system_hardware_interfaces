@@ -16,9 +16,9 @@
 
 #include "SuspendControlService.h"
 
-#include "SystemSuspend.h"
-
 #include <android-base/logging.h>
+
+#include "SystemSuspend.h"
 
 namespace android {
 namespace system {

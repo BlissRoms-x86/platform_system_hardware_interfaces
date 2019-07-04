@@ -19,13 +19,12 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/strings.h>
+#include <fcntl.h>
 #include <hidl/Status.h>
 #include <hwbinder/IPCThreadState.h>
-
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <fcntl.h>
 #include <string>
 #include <thread>
 
