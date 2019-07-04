@@ -14,23 +14,21 @@
  * limitations under the License.
  */
 
-#include "SuspendControlService.h"
-#include "SystemSuspend.h"
-
 #include <android-base/logging.h>
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
 #include <cutils/native_handle.h>
+#include <fcntl.h>
 #include <hidl/HidlTransportSupport.h>
 #include <hwbinder/ProcessState.h>
-
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-
-#include <fcntl.h>
 #include <unistd.h>
+
+#include "SuspendControlService.h"
+#include "SystemSuspend.h"
 
 using android::sp;
 using android::status_t;
