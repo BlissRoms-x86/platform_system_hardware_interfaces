@@ -22,6 +22,7 @@
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
 #include <cutils/native_handle.h>
+#include <ftw.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <hidl/HidlTransportSupport.h>
@@ -73,21 +74,10 @@ static bool isReadBlocked(int fd, int timeout_ms = 20) {
     return poll(&pfd, 1, timeout_ms) == 0;
 }
 
-class SystemSuspendTestEnvironment : public ::testing::Environment {
-   public:
-    using Env = SystemSuspendTestEnvironment;
-    static Env* Instance() {
-        static Env* instance = new Env{};
-        return instance;
-    }
-
-    SystemSuspendTestEnvironment() {
-        Socketpair(SOCK_STREAM, &wakeupCountFds[0], &wakeupCountFds[1]);
-        Socketpair(SOCK_STREAM, &stateFds[0], &stateFds[1]);
-    }
-
-    void registerTestService() {
-        std::thread testService([this] {
+class SystemSuspendTest : public ::testing::Test {
+   protected:
+    static void registerTestService() {
+        std::thread testService([] {
             configureRpcThreadpool(1, true /* callerWillJoin */);
 
             sp<SuspendControlService> suspendControl = new SuspendControlService();
@@ -101,9 +91,9 @@ class SystemSuspendTestEnvironment : public ::testing::Environment {
             sp<android::ProcessState> ps{android::ProcessState::self()};
             ps->startThreadPool();
 
-            sp<ISystemSuspend> suspend =
-                new SystemSuspend(std::move(wakeupCountFds[1]), std::move(stateFds[1]),
-                                  1 /* maxStatsEntries */, 0ms /* baseSleepTime */, suspendControl);
+            sp<ISystemSuspend> suspend = new SystemSuspend(
+                std::move(wakeupCountFds[1]), std::move(stateFds[1]), 1 /* maxNativeStatsEntries */,
+                unique_fd(-1) /* kernelWakelockStatsFd */, 0ms /* baseSleepTime */, suspendControl);
             status_t status = suspend->registerAsService(kServiceName);
             if (android::OK != status) {
                 LOG(FATAL) << "Unable to register service: " << status;
@@ -114,7 +104,10 @@ class SystemSuspendTestEnvironment : public ::testing::Environment {
         testService.detach();
     }
 
-    virtual void SetUp() {
+    static void SetUpTestSuite() {
+        Socketpair(SOCK_STREAM, &wakeupCountFds[0], &wakeupCountFds[1]);
+        Socketpair(SOCK_STREAM, &stateFds[0], &stateFds[1]);
+
         registerTestService();
         ::android::hardware::details::waitForHwService(ISystemSuspend::descriptor, kServiceName);
         sp<ISystemSuspend> suspendService = ISystemSuspend::getService(kServiceName);
@@ -131,11 +124,6 @@ class SystemSuspendTestEnvironment : public ::testing::Environment {
         ASSERT_EQ(enabled, true) << "failed to start autosuspend";
     }
 
-    unique_fd wakeupCountFds[2];
-    unique_fd stateFds[2];
-};
-
-class SystemSuspendTest : public ::testing::Test {
    public:
     virtual void SetUp() override {
         ::android::hardware::details::waitForHwService(ISystemSuspend::descriptor, kServiceName);
@@ -147,9 +135,8 @@ class SystemSuspendTest : public ::testing::Test {
         ASSERT_NE(control, nullptr) << "failed to get the suspend control service";
         controlService = interface_cast<ISuspendControlService>(control);
 
-        auto* environment = SystemSuspendTestEnvironment::Instance();
-        wakeupCountFd = environment->wakeupCountFds[0];
-        stateFd = environment->stateFds[0];
+        wakeupCountFd = wakeupCountFds[0];
+        stateFd = stateFds[0];
 
         // SystemSuspend HAL should not have written back to wakeupCountFd or stateFd yet.
         ASSERT_TRUE(isReadBlocked(wakeupCountFd));
@@ -191,12 +178,19 @@ class SystemSuspendTest : public ::testing::Test {
                 << "SystemSuspend failed to write correct sleep state.";
         }
     }
-
     sp<ISystemSuspend> suspendService;
     sp<ISuspendControlService> controlService;
-    int stateFd;
-    int wakeupCountFd;
+    static unique_fd wakeupCountFds[2];
+    static unique_fd stateFds[2];
+    static int wakeupCountFd;
+    static int stateFd;
 };
+
+// SystemSuspendTest test suite resources
+unique_fd SystemSuspendTest::wakeupCountFds[2];
+unique_fd SystemSuspendTest::stateFds[2];
+int SystemSuspendTest::wakeupCountFd;
+int SystemSuspendTest::stateFd;
 
 // Tests that autosuspend thread can only be enabled once.
 TEST_F(SystemSuspendTest, OnlyOneEnableAutosuspend) {
@@ -274,64 +268,6 @@ TEST_F(SystemSuspendTest, CleanupOnAbort) {
     // Timing of the wake lock clean-up after process death is scheduler-dependent.
     // Increase the timeout to avoid flakes.
     ASSERT_FALSE(isSystemSuspendBlocked(200));
-}
-
-// Test that getWakeLockStats has correct information about WakeLocks.
-TEST_F(SystemSuspendTest, GetWakeLockStats) {
-    TimestampType acquireTime = getEpochTimeNow();
-    TimestampType releaseTime;
-    std::string fakeWlName = "FakeLock";
-    {
-        sp<IWakeLock> fakeLock = acquireWakeLock(fakeWlName);
-        std::vector<WakeLockInfo> wlStats;
-        controlService->getWakeLockStats(&wlStats);
-        ASSERT_EQ(wlStats.size(), 1);
-        ASSERT_EQ(wlStats.begin()->name, fakeWlName);
-        ASSERT_EQ(wlStats.begin()->pid, getpid());
-        ASSERT_EQ(wlStats.begin()->activeCount, 1);
-        ASSERT_EQ(wlStats.begin()->isActive, true);
-        ASSERT_GT(wlStats.begin()->maxTime, 0);
-        ASSERT_GT(wlStats.begin()->totalTime, 0);
-
-        // The updated timestamp is not deterministic. However, all SystemSuspend HAL calls run
-        // in the order of microseconds, so in practice the timestamp should be within 1ms.
-        ASSERT_LT(std::abs(wlStats.begin()->activeSince - acquireTime), 1000);
-        ASSERT_LT(std::abs(wlStats.begin()->lastChange - acquireTime), 1000);
-
-        // We sleep so that the wake lock stats entry get updated with a different timestamp.
-        std::this_thread::sleep_for(1s);
-        releaseTime = getEpochTimeNow();
-    }
-    std::vector<WakeLockInfo> wlStats;
-    controlService->getWakeLockStats(&wlStats);
-    ASSERT_EQ(wlStats.size(), 1);
-    ASSERT_EQ(wlStats.begin()->name, fakeWlName);
-    ASSERT_EQ(wlStats.begin()->pid, getpid());
-    ASSERT_EQ(wlStats.begin()->activeCount, 1);
-    ASSERT_EQ(wlStats.begin()->isActive, false);
-    ASSERT_LT(std::abs(wlStats.begin()->maxTime - (releaseTime - acquireTime)), 1000);
-    ASSERT_LT(std::abs(wlStats.begin()->totalTime - (releaseTime - acquireTime)), 1000);
-    ASSERT_LT(std::abs(wlStats.begin()->activeSince - acquireTime), 1000);
-    ASSERT_LT(std::abs(wlStats.begin()->lastChange - releaseTime), 1000);
-}
-
-// Test that the least recently used wake lock stats entry is evicted after a given threshold.
-TEST_F(SystemSuspendTest, WakeLockStatsLruEviction) {
-    std::string fakeWlName1 = "FakeLock1";
-    std::string fakeWlName2 = "FakeLock2";
-
-    acquireWakeLock(fakeWlName1);
-    acquireWakeLock(fakeWlName2);
-
-    std::vector<WakeLockInfo> wlStats;
-    controlService->getWakeLockStats(&wlStats);
-
-    // Max number of stats entries was set to 1 in SystemSuspend constructor.
-    ASSERT_EQ(wlStats.size(), 1);
-    ASSERT_EQ(wlStats.begin()->name, fakeWlName2);
-    ASSERT_EQ(wlStats.begin()->pid, getpid());
-    ASSERT_EQ(wlStats.begin()->activeCount, 1);
-    ASSERT_EQ(wlStats.begin()->isActive, false);
 }
 
 // Stress test acquiring/releasing WakeLocks.
@@ -444,11 +380,380 @@ TEST_F(SystemSuspendTest, CallbackRegisterCallbackNoDeadlock) {
     checkLoop(3);
 }
 
+class SystemSuspendSameThreadTest : public ::testing::Test {
+   public:
+    sp<IWakeLock> acquireWakeLock(const std::string& name = "TestLock") {
+        return suspendService->acquireWakeLock(WakeLockType::PARTIAL, name);
+    }
+
+    /**
+     * Returns true if wake lock is found else false.
+     */
+    bool findWakeLockInfoByName(const std::vector<WakeLockInfo>& wlStats, const std::string& name,
+                                WakeLockInfo* info) {
+        auto it = std::find_if(wlStats.begin(), wlStats.end(),
+                               [&name](const auto& x) { return x.name == name; });
+        if (it != wlStats.end()) {
+            *info = *it;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Creates kernel wakelock stat file and writes stat to file.
+     * Returns true on success, else false.
+     */
+    bool writeStatToFile(int kernelWakelockFd, const std::string& fileName, int64_t stat) {
+        unique_fd statFd{TEMP_FAILURE_RETRY(
+            openat(kernelWakelockFd, fileName.c_str(), O_CREAT | O_CLOEXEC | O_RDWR, S_IRWXU))};
+        if (statFd < 0) {
+            PLOG(ERROR) << "SystemSuspend: Error opening " << fileName;
+            return false;
+        }
+
+        if (!WriteStringToFd(std::to_string(stat), statFd.get())) {
+            PLOG(ERROR) << "SystemSuspend: Error writing stat to " << fileName;
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Creates a kernel wakelock directory and stats files.
+     * Returns true on success else false.
+     */
+    bool addKernelWakelock(const std::string& name, int64_t activeCount = 42,
+                           int64_t activeTime = 42, int64_t eventCount = 42,
+                           int64_t expireCount = 42, int64_t lastChange = 42, int64_t maxTime = 42,
+                           int64_t preventSuspendTime = 42, int64_t totalTime = 42,
+                           int64_t wakeupCount = 42) {
+        if ((mkdirat(kernelWakelockStatsFd, name.c_str(), S_IRWXU)) < 0) {
+            PLOG(ERROR) << "SystemSuspend: Error creating directory for " << name << " wakelock";
+            return false;
+        }
+
+        unique_fd kernelWakelockFd{TEMP_FAILURE_RETRY(
+            openat(kernelWakelockStatsFd, name.c_str(), O_DIRECTORY | O_CLOEXEC | O_RDONLY))};
+        if (kernelWakelockFd < 0) {
+            PLOG(ERROR) << "SystemSuspend: Error opening " << name;
+            return false;
+        }
+
+        int fd = kernelWakelockFd.get();
+
+        return writeStatToFile(fd, "active_count", activeCount) &&
+               writeStatToFile(fd, "active_time_ms", activeTime) &&
+               writeStatToFile(fd, "event_count", eventCount) &&
+               writeStatToFile(fd, "expire_count", expireCount) &&
+               writeStatToFile(fd, "last_change_ms", lastChange) &&
+               writeStatToFile(fd, "max_time_ms", maxTime) &&
+               writeStatToFile(fd, "prevent_suspend_time_ms", preventSuspendTime) &&
+               writeStatToFile(fd, "total_time_ms", totalTime) &&
+               writeStatToFile(fd, "wakeup_count", wakeupCount);
+    }
+
+    /**
+     * Removes all stats of the named kernel wakelock.
+     * Returns true on success else false.
+     */
+    bool removeKernelWakelock(const std::string& name) {
+        std::string path = std::string(kernelWakelockStatsDir.path) + "/" + name;
+        auto callback = [](const char* child, const struct stat*, int file_type,
+                           struct FTW*) -> int {
+            switch (file_type) {
+                case FTW_D:
+                case FTW_DP:
+                case FTW_DNR:
+                    if (rmdir(child) == -1) {
+                        PLOG(ERROR) << "rmdir " << child;
+                    }
+                    break;
+                case FTW_NS:
+                default:
+                    if (rmdir(child) != -1) break;
+                    // FALLTHRU (for gcc, lint, pcc, etc; and following for clang)
+                    FALLTHROUGH_INTENDED;
+                case FTW_F:
+                case FTW_SL:
+                case FTW_SLN:
+                    if (unlink(child) == -1) {
+                        PLOG(ERROR) << "unlink " << child;
+                    }
+                    break;
+            }
+            return 0;
+        };
+        return nftw(path.c_str(), callback, 128, FTW_DEPTH | FTW_MOUNT | FTW_PHYS) == 0;
+    }
+
+    /**
+     * Remove stats of all kernel wakelocks.
+     */
+    bool removeAllKernelWakelocks() {
+        std::unique_ptr<DIR, decltype(&closedir)> dp(fdopendir(dup(kernelWakelockStatsFd)),
+                                                     &closedir);
+        if (dp) {
+            rewinddir(dp.get());
+            struct dirent* de;
+            while ((de = readdir(dp.get()))) {
+                std::string kwlName(de->d_name);
+                if ((kwlName == ".") || (kwlName == "..")) {
+                    continue;
+                }
+                if (!removeKernelWakelock(kwlName)) {
+                    PLOG(ERROR) << "SystemSuspend: Failed to remove " << kwlName << " stats";
+                    return false;
+                }
+            }
+            return true;
+        }
+        PLOG(ERROR) << "SystemSuspend: Failed fdopendir on kernelWakelockStatsFd";
+        return false;
+    }
+
+    /**
+     * Returns wakelock stats.
+     */
+    std::vector<WakeLockInfo> getWakelockStats() {
+        std::vector<WakeLockInfo> wlStats;
+        controlService->getWakeLockStats(&wlStats);
+        return wlStats;
+    }
+
+    virtual void SetUp() override {
+        kernelWakelockStatsFd = unique_fd(TEMP_FAILURE_RETRY(
+            open(kernelWakelockStatsDir.path, O_DIRECTORY | O_CLOEXEC | O_RDONLY)));
+        if (kernelWakelockStatsFd < 0) {
+            PLOG(FATAL) << "SystemSuspend: Failed to open kernel wakelock stats directory";
+        }
+
+        // Set up same thread suspend services
+        sp<SuspendControlService> suspendControl = new SuspendControlService();
+        controlService = suspendControl;
+        suspendService = new SystemSuspend(
+            unique_fd(-1) /* wakeupCountFd */, unique_fd(-1) /* stateFd */,
+            1 /* maxNativeStatsEntries */, unique_fd(dup(kernelWakelockStatsFd.get())),
+            0ms /* baseSleepTime */, suspendControl);
+    }
+
+    virtual void TearDown() override { ASSERT_TRUE(removeAllKernelWakelocks()); }
+
+    sp<ISystemSuspend> suspendService;
+    sp<ISuspendControlService> controlService;
+    unique_fd kernelWakelockStatsFd;
+    TemporaryDir kernelWakelockStatsDir;
+};
+
+// Test that getWakeLockStats has correct information about Native WakeLocks.
+TEST_F(SystemSuspendSameThreadTest, GetNativeWakeLockStats) {
+    std::string fakeWlName = "FakeLock";
+    {
+        sp<IWakeLock> fakeLock = acquireWakeLock(fakeWlName);
+        std::vector<WakeLockInfo> wlStats = getWakelockStats();
+        ASSERT_EQ(wlStats.size(), 1);
+
+        WakeLockInfo nwlInfo;
+        ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeWlName, &nwlInfo));
+        ASSERT_EQ(nwlInfo.name, fakeWlName);
+        ASSERT_EQ(nwlInfo.activeCount, 1);
+        ASSERT_EQ(nwlInfo.isActive, true);
+        ASSERT_FALSE(nwlInfo.isKernelWakelock);
+
+        ASSERT_EQ(nwlInfo.pid, getpid());
+
+        ASSERT_EQ(nwlInfo.eventCount, 0);
+        ASSERT_EQ(nwlInfo.expireCount, 0);
+        ASSERT_EQ(nwlInfo.preventSuspendTime, 0);
+        ASSERT_EQ(nwlInfo.wakeupCount, 0);
+
+        // We sleep so that the wake lock stats entry get updated with a different timestamp.
+        std::this_thread::sleep_for(1s);
+    }
+    std::vector<WakeLockInfo> wlStats = getWakelockStats();
+    ASSERT_EQ(wlStats.size(), 1);
+
+    WakeLockInfo nwlInfo;
+    ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeWlName, &nwlInfo));
+    ASSERT_EQ(nwlInfo.name, fakeWlName);
+    ASSERT_EQ(nwlInfo.activeCount, 1);
+    ASSERT_GE(nwlInfo.maxTime, 1000);
+    ASSERT_GE(nwlInfo.totalTime, 1000);
+    ASSERT_EQ(nwlInfo.isActive, false);
+    ASSERT_EQ(nwlInfo.activeTime, 0);  // No longer active
+    ASSERT_FALSE(nwlInfo.isKernelWakelock);
+
+    ASSERT_EQ(nwlInfo.pid, getpid());
+
+    ASSERT_EQ(nwlInfo.eventCount, 0);
+    ASSERT_EQ(nwlInfo.expireCount, 0);
+    ASSERT_EQ(nwlInfo.preventSuspendTime, 0);
+    ASSERT_EQ(nwlInfo.wakeupCount, 0);
+}
+
+// Test that getWakeLockStats has correct information about Kernel WakeLocks.
+TEST_F(SystemSuspendSameThreadTest, GetKernelWakeLockStats) {
+    std::string fakeKwlName1 = "fakeKwl1";
+    std::string fakeKwlName2 = "fakeKwl2";
+    addKernelWakelock(fakeKwlName1);
+    addKernelWakelock(fakeKwlName2, 10 /* activeCount */);
+
+    std::vector<WakeLockInfo> wlStats = getWakelockStats();
+
+    ASSERT_EQ(wlStats.size(), 2);
+
+    WakeLockInfo kwlInfo1;
+    ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeKwlName1, &kwlInfo1));
+    ASSERT_EQ(kwlInfo1.name, fakeKwlName1);
+    ASSERT_EQ(kwlInfo1.activeCount, 42);
+    ASSERT_EQ(kwlInfo1.lastChange, 42);
+    ASSERT_EQ(kwlInfo1.maxTime, 42);
+    ASSERT_EQ(kwlInfo1.totalTime, 42);
+    ASSERT_EQ(kwlInfo1.isActive, true);
+    ASSERT_EQ(kwlInfo1.activeTime, 42);
+    ASSERT_TRUE(kwlInfo1.isKernelWakelock);
+
+    ASSERT_EQ(kwlInfo1.pid, -1);
+
+    ASSERT_EQ(kwlInfo1.eventCount, 42);
+    ASSERT_EQ(kwlInfo1.expireCount, 42);
+    ASSERT_EQ(kwlInfo1.preventSuspendTime, 42);
+    ASSERT_EQ(kwlInfo1.wakeupCount, 42);
+
+    WakeLockInfo kwlInfo2;
+    ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeKwlName2, &kwlInfo2));
+    ASSERT_EQ(kwlInfo2.name, fakeKwlName2);
+    ASSERT_EQ(kwlInfo2.activeCount, 10);
+    ASSERT_EQ(kwlInfo2.lastChange, 42);
+    ASSERT_EQ(kwlInfo2.maxTime, 42);
+    ASSERT_EQ(kwlInfo2.totalTime, 42);
+    ASSERT_EQ(kwlInfo2.isActive, true);
+    ASSERT_EQ(kwlInfo2.activeTime, 42);
+    ASSERT_TRUE(kwlInfo2.isKernelWakelock);
+
+    ASSERT_EQ(kwlInfo2.pid, -1);
+
+    ASSERT_EQ(kwlInfo2.eventCount, 42);
+    ASSERT_EQ(kwlInfo2.expireCount, 42);
+    ASSERT_EQ(kwlInfo2.preventSuspendTime, 42);
+    ASSERT_EQ(kwlInfo2.wakeupCount, 42);
+}
+
+// Test that getWakeLockStats has correct information about Native AND Kernel WakeLocks.
+TEST_F(SystemSuspendSameThreadTest, GetNativeAndKernelWakeLockStats) {
+    std::string fakeNwlName = "fakeNwl";
+    std::string fakeKwlName = "fakeKwl";
+
+    addKernelWakelock(fakeKwlName);
+
+    {
+        sp<IWakeLock> fakeLock = acquireWakeLock(fakeNwlName);
+        std::vector<WakeLockInfo> wlStats = getWakelockStats();
+        ASSERT_EQ(wlStats.size(), 2);
+
+        // Native Wakelock Stats
+        WakeLockInfo nwlInfo;
+        ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeNwlName, &nwlInfo));
+        ASSERT_EQ(nwlInfo.name, fakeNwlName);
+        ASSERT_EQ(nwlInfo.activeCount, 1);
+        ASSERT_EQ(nwlInfo.isActive, true);
+        ASSERT_FALSE(nwlInfo.isKernelWakelock);
+
+        ASSERT_EQ(nwlInfo.pid, getpid());
+
+        ASSERT_EQ(nwlInfo.eventCount, 0);
+        ASSERT_EQ(nwlInfo.expireCount, 0);
+        ASSERT_EQ(nwlInfo.preventSuspendTime, 0);
+        ASSERT_EQ(nwlInfo.wakeupCount, 0);
+
+        // Kernel Wakelock Stats
+        WakeLockInfo kwlInfo;
+        ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeKwlName, &kwlInfo));
+        ASSERT_EQ(kwlInfo.name, fakeKwlName);
+        ASSERT_EQ(kwlInfo.activeCount, 42);
+        ASSERT_EQ(kwlInfo.lastChange, 42);
+        ASSERT_EQ(kwlInfo.maxTime, 42);
+        ASSERT_EQ(kwlInfo.totalTime, 42);
+        ASSERT_EQ(kwlInfo.isActive, true);
+        ASSERT_EQ(kwlInfo.activeTime, 42);
+        ASSERT_TRUE(kwlInfo.isKernelWakelock);
+
+        ASSERT_EQ(kwlInfo.pid, -1);
+
+        ASSERT_EQ(kwlInfo.eventCount, 42);
+        ASSERT_EQ(kwlInfo.expireCount, 42);
+        ASSERT_EQ(kwlInfo.preventSuspendTime, 42);
+        ASSERT_EQ(kwlInfo.wakeupCount, 42);
+
+        // We sleep so that the wake lock stats entry get updated with a different timestamp.
+        std::this_thread::sleep_for(1s);
+    }
+    std::vector<WakeLockInfo> wlStats = getWakelockStats();
+    ASSERT_EQ(wlStats.size(), 2);
+
+    // Native Wakelock Stats
+    WakeLockInfo nwlInfo;
+    ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeNwlName, &nwlInfo));
+    ASSERT_EQ(nwlInfo.name, fakeNwlName);
+    ASSERT_EQ(nwlInfo.activeCount, 1);
+    ASSERT_GE(nwlInfo.maxTime, 1000);
+    ASSERT_GE(nwlInfo.totalTime, 1000);
+    ASSERT_EQ(nwlInfo.isActive, false);
+    ASSERT_EQ(nwlInfo.activeTime, 0);  // No longer active
+    ASSERT_FALSE(nwlInfo.isKernelWakelock);
+
+    ASSERT_EQ(nwlInfo.pid, getpid());
+
+    ASSERT_EQ(nwlInfo.eventCount, 0);
+    ASSERT_EQ(nwlInfo.expireCount, 0);
+    ASSERT_EQ(nwlInfo.preventSuspendTime, 0);
+    ASSERT_EQ(nwlInfo.wakeupCount, 0);
+
+    // Kernel Wakelock Stats (No changes expected here)
+    WakeLockInfo kwlInfo;
+    ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeKwlName, &kwlInfo));
+    ASSERT_EQ(kwlInfo.name, fakeKwlName);
+    ASSERT_EQ(kwlInfo.activeCount, 42);
+    ASSERT_EQ(kwlInfo.lastChange, 42);
+    ASSERT_EQ(kwlInfo.maxTime, 42);
+    ASSERT_EQ(kwlInfo.totalTime, 42);
+    ASSERT_EQ(kwlInfo.isActive, true);
+    ASSERT_EQ(kwlInfo.activeTime, 42);
+    ASSERT_TRUE(kwlInfo.isKernelWakelock);
+
+    ASSERT_EQ(kwlInfo.pid, -1);
+
+    ASSERT_EQ(kwlInfo.eventCount, 42);
+    ASSERT_EQ(kwlInfo.expireCount, 42);
+    ASSERT_EQ(kwlInfo.preventSuspendTime, 42);
+    ASSERT_EQ(kwlInfo.wakeupCount, 42);
+}
+
+// Test that the least recently used native wake lock stats entry is evicted after a given
+// threshold.
+TEST_F(SystemSuspendSameThreadTest, NativeWakeLockStatsLruEviction) {
+    std::string fakeWlName1 = "FakeLock1";
+    std::string fakeWlName2 = "FakeLock2";
+
+    acquireWakeLock(fakeWlName1);
+    acquireWakeLock(fakeWlName2);
+
+    std::vector<WakeLockInfo> wlStats = getWakelockStats();
+
+    // Max number of native stats entries was set to 1 in SystemSuspend constructor.
+    ASSERT_EQ(wlStats.size(), 1);
+    ASSERT_EQ(wlStats.begin()->name, fakeWlName2);
+
+    WakeLockInfo wlInfo;
+    ASSERT_TRUE(findWakeLockInfoByName(wlStats, fakeWlName2, &wlInfo));
+    ASSERT_FALSE(findWakeLockInfoByName(wlStats, fakeWlName1, &wlInfo));  // Evicted
+}
+
 }  // namespace android
 
 int main(int argc, char** argv) {
     setenv("TREBLE_TESTING_OVERRIDE", "true", true);
-    ::testing::AddGlobalTestEnvironment(android::SystemSuspendTestEnvironment::Instance());
     ::testing::InitGoogleMock(&argc, argv);
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

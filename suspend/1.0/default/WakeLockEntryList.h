@@ -17,6 +17,7 @@
 #ifndef ANDROID_SYSTEM_SUSPEND_WAKE_LOCK_ENTRY_LIST_H
 #define ANDROID_SYSTEM_SUSPEND_WAKE_LOCK_ENTRY_LIST_H
 
+#include <android-base/unique_fd.h>
 #include <android/system/suspend/WakeLockInfo.h>
 #include <utils/Mutex.h>
 
@@ -31,6 +32,7 @@ namespace system {
 namespace suspend {
 namespace V1_0 {
 
+using android::base::unique_fd;
 using TimestampType = int64_t;
 
 TimestampType getEpochTimeNow();
@@ -41,7 +43,7 @@ TimestampType getEpochTimeNow();
  */
 class WakeLockEntryList {
    public:
-    WakeLockEntryList(size_t capacity);
+    WakeLockEntryList(size_t capacity, unique_fd kernelWakelockStatsFd);
     void updateOnAcquire(const std::string& name, int pid, TimestampType epochTimeNow);
     void updateOnRelease(const std::string& name, int pid, TimestampType epochTimeNow);
     // updateNow() should be called before getWakeLockStats() to ensure stats are
@@ -50,7 +52,13 @@ class WakeLockEntryList {
     void getWakeLockStats(std::vector<WakeLockInfo>* aidl_return) const;
 
    private:
-    WakeLockInfo createEntry(const std::string& name, int pid, TimestampType epochTimeNow);
+    void evictIfFull() REQUIRES(mStatsLock);
+    void insertEntry(WakeLockInfo entry) REQUIRES(mStatsLock);
+    void deleteEntry(std::list<WakeLockInfo>::iterator entry) REQUIRES(mStatsLock);
+    WakeLockInfo createNativeEntry(const std::string& name, int pid,
+                                   TimestampType epochTimeNow) const;
+    WakeLockInfo createKernelEntry(const std::string& name) const;
+    void getKernelWakelockStats(std::vector<WakeLockInfo>* aidl_return) const;
 
     // Hash for WakeLockEntry key (pair<std::string, int>)
     struct LockHash {
@@ -60,6 +68,8 @@ class WakeLockEntryList {
     };
 
     size_t mCapacity;
+    unique_fd mKernelWakelockStatsFd;
+
     mutable std::mutex mStatsLock;
 
     // std::list and std::unordered map are used to support both inserting a stat
