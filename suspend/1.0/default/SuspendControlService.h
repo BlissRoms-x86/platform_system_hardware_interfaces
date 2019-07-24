@@ -45,6 +45,7 @@ class SuspendControlService : public BnSuspendControlService,
 
     void setSuspendService(const wp<SystemSuspend>& suspend);
     void notifyWakeup(bool success);
+    status_t dump(int fd, const Vector<String16>& args) override;
 
    private:
     wp<SystemSuspend> mSuspend;
