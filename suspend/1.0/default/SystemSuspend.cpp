@@ -79,7 +79,8 @@ void WakeLock::releaseOnce() {
     });
 }
 
-SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, size_t maxStatsEntries,
+SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd,
+                             size_t maxNativeStatsEntries, unique_fd kernelWakelockStatsFd,
                              std::chrono::milliseconds baseSleepTime,
                              const sp<SuspendControlService>& controlService,
                              bool useSuspendCounter)
@@ -89,7 +90,7 @@ SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, size_t 
       mBaseSleepTime(baseSleepTime),
       mSleepTime(baseSleepTime),
       mControlService(controlService),
-      mStatsList(maxStatsEntries),
+      mStatsList(maxNativeStatsEntries, std::move(kernelWakelockStatsFd)),
       mUseSuspendCounter(useSuspendCounter),
       mWakeLockFd(-1),
       mWakeUnlockFd(-1) {
