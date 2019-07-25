@@ -20,22 +20,47 @@ package android.system.suspend;
 /**
  * Parcelable WakelockInfo - Representation of wake lock stats.
  *
- * @name:           Name of wake lock (Not guaranteed to be unique).
- * @pid:            Pid of process that aqcuired the wake lock.
- * @activeSince:    Time (in us) the wake lock was last activated.
- * @activeCount:    Number of times the wake lock was activated.
- * @maxTime:        Maximum time (in us) this wake lock has been continuously active.
- * @totalTime:      Total time (in us) this wake lock has been active.
- * @isActive:       Status of wake lock.
+ * Wakelocks obtained via SystemSuspend are hereafter referred to as
+ * native wake locks.
  *
+ * @name:               Name of wake lock (Not guaranteed to be unique).
+ * @activeCount:        Number of times the wake lock was activated.
+ * @lastChange:         Monotonic time when the wake lock was last touched.
+ * @maxTime:            Maximum time (in us) this wake lock has been continuously active.
+ * @totalTime:          Total time (in us) this wake lock has been active.
+ * @isActive:           Status of wake lock.
+ * @activeTime:         Time since wake lock was actived, 0 if wake lock is not active.
+ * @isKernelWakelock:   True if kernel wake lock, false if native wake lock.
+ *
+ * The stats below are specific to NATIVE wake locks and hold no valid
+ * data in the context of kernel wake locks.
+ *
+ * @pid:                Pid of process that aqcuired native wake lock.
+ *
+ * The stats below are specific to KERNEL wake locks and hold no valid
+ * data in the context of native wake locks.
+ *
+ * @eventCount:         Number of signaled wakeup events.
+ * @expireCount:        Number times the wakeup source's timeout expired.
+ * @preventSuspendTime: Total time this wake lock has been preventing autosuspend.
+ * @wakeupCount:        Number of times the wakeup source might abort suspend.
  */
 parcelable WakeLockInfo {
     @utf8InCpp String name;
-    int pid;
-    long activeSince;
     long activeCount;
     long lastChange;
     long maxTime;
     long totalTime;
     boolean isActive;
+    long activeTime;
+    boolean isKernelWakelock;
+
+    // ---- Specific to Native Wake locks ---- //
+    int pid;
+
+    // ---- Specific to Kernel Wake locks ---- //
+    long eventCount;
+    long expireCount;
+    long preventSuspendTime;
+    long wakeupCount;
 }
