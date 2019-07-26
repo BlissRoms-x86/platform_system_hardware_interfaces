@@ -50,6 +50,7 @@ class WakeLockEntryList {
     // updated wrt the current time.
     void updateNow();
     void getWakeLockStats(std::vector<WakeLockInfo>* aidl_return) const;
+    friend std::ostream& operator<<(std::ostream& out, const WakeLockEntryList& list);
 
    private:
     void evictIfFull() REQUIRES(mStatsLock);
