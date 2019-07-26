@@ -75,7 +75,7 @@ Return<void> WakeLock::release() {
 void WakeLock::releaseOnce() {
     std::call_once(mReleased, [this]() {
         mSystemSuspend->decSuspendCounter(mName);
-        mSystemSuspend->updateWakeLockStatOnRelease(mName, mPid, getEpochTimeNow());
+        mSystemSuspend->updateWakeLockStatOnRelease(mName, mPid, getTimeNow());
     });
 }
 
@@ -139,7 +139,7 @@ bool SystemSuspend::forceSuspend() {
 Return<sp<IWakeLock>> SystemSuspend::acquireWakeLock(WakeLockType /* type */,
                                                      const hidl_string& name) {
     auto pid = getCallingPid();
-    auto timeNow = getEpochTimeNow();
+    auto timeNow = getTimeNow();
     IWakeLock* wl = new WakeLock{this, name, pid};
     mStatsList.updateOnAcquire(name, pid, timeNow);
     return wl;
@@ -217,8 +217,8 @@ void SystemSuspend::updateSleepTime(bool success) {
 }
 
 void SystemSuspend::updateWakeLockStatOnRelease(const std::string& name, int pid,
-                                                TimestampType epochTimeNow) {
-    mStatsList.updateOnRelease(name, pid, epochTimeNow);
+                                                TimestampType timeNow) {
+    mStatsList.updateOnRelease(name, pid, timeNow);
 }
 
 const WakeLockEntryList& SystemSuspend::getStatsList() const {

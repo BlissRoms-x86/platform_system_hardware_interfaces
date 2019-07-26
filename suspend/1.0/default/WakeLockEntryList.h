@@ -35,7 +35,7 @@ namespace V1_0 {
 using android::base::unique_fd;
 using TimestampType = int64_t;
 
-TimestampType getEpochTimeNow();
+TimestampType getTimeNow();
 
 /*
  * WakeLockEntryList to collect wake lock stats.
@@ -44,8 +44,8 @@ TimestampType getEpochTimeNow();
 class WakeLockEntryList {
    public:
     WakeLockEntryList(size_t capacity, unique_fd kernelWakelockStatsFd);
-    void updateOnAcquire(const std::string& name, int pid, TimestampType epochTimeNow);
-    void updateOnRelease(const std::string& name, int pid, TimestampType epochTimeNow);
+    void updateOnAcquire(const std::string& name, int pid, TimestampType timeNow);
+    void updateOnRelease(const std::string& name, int pid, TimestampType timeNow);
     // updateNow() should be called before getWakeLockStats() to ensure stats are
     // updated wrt the current time.
     void updateNow();
@@ -56,8 +56,7 @@ class WakeLockEntryList {
     void evictIfFull() REQUIRES(mStatsLock);
     void insertEntry(WakeLockInfo entry) REQUIRES(mStatsLock);
     void deleteEntry(std::list<WakeLockInfo>::iterator entry) REQUIRES(mStatsLock);
-    WakeLockInfo createNativeEntry(const std::string& name, int pid,
-                                   TimestampType epochTimeNow) const;
+    WakeLockInfo createNativeEntry(const std::string& name, int pid, TimestampType timeNow) const;
     WakeLockInfo createKernelEntry(const std::string& name) const;
     void getKernelWakelockStats(std::vector<WakeLockInfo>* aidl_return) const;
 
