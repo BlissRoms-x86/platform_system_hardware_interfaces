@@ -105,9 +105,18 @@ std::ostream& operator<<(std::ostream& out, const WakeLockEntryList& list) {
     return out;
 }
 
-TimestampType getEpochTimeNow() {
-    auto timeSinceEpoch = std::chrono::system_clock::now().time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(timeSinceEpoch).count();
+/**
+ * Returns the monotonic time in milliseconds.
+ */
+TimestampType getTimeNow() {
+    timespec monotime;
+    clock_gettime(CLOCK_MONOTONIC, &monotime);
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::nanoseconds{monotime.tv_nsec})
+               .count() +
+           std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::seconds{monotime.tv_sec})
+               .count();
 }
 
 WakeLockEntryList::WakeLockEntryList(size_t capacity, unique_fd kernelWakelockStatsFd)
@@ -150,13 +159,13 @@ void WakeLockEntryList::deleteEntry(std::list<WakeLockInfo>::iterator entry) {
  * Creates and returns a native wakelock entry.
  */
 WakeLockInfo WakeLockEntryList::createNativeEntry(const std::string& name, int pid,
-                                                  TimestampType epochTimeNow) const {
+                                                  TimestampType timeNow) const {
     WakeLockInfo info;
 
     info.name = name;
     // It only makes sense to create a new entry on initial activation of the lock.
     info.activeCount = 1;
-    info.lastChange = epochTimeNow;
+    info.lastChange = timeNow;
     info.maxTime = 0;
     info.totalTime = 0;
     info.isActive = true;
@@ -275,15 +284,14 @@ void WakeLockEntryList::getKernelWakelockStats(std::vector<WakeLockInfo>* aidl_r
     }
 }
 
-void WakeLockEntryList::updateOnAcquire(const std::string& name, int pid,
-                                        TimestampType epochTimeNow) {
+void WakeLockEntryList::updateOnAcquire(const std::string& name, int pid, TimestampType timeNow) {
     std::lock_guard<std::mutex> lock(mStatsLock);
 
     auto key = std::make_pair(name, pid);
     auto it = mLookupTable.find(key);
     if (it == mLookupTable.end()) {
         evictIfFull();
-        WakeLockInfo newEntry = createNativeEntry(name, pid, epochTimeNow);
+        WakeLockInfo newEntry = createNativeEntry(name, pid, timeNow);
         insertEntry(newEntry);
     } else {
         auto staleEntry = it->second;
@@ -293,15 +301,14 @@ void WakeLockEntryList::updateOnAcquire(const std::string& name, int pid,
         updatedEntry.isActive = true;
         updatedEntry.activeTime = 0;
         updatedEntry.activeCount++;
-        updatedEntry.lastChange = epochTimeNow;
+        updatedEntry.lastChange = timeNow;
 
         deleteEntry(staleEntry);
         insertEntry(std::move(updatedEntry));
     }
 }
 
-void WakeLockEntryList::updateOnRelease(const std::string& name, int pid,
-                                        TimestampType epochTimeNow) {
+void WakeLockEntryList::updateOnRelease(const std::string& name, int pid, TimestampType timeNow) {
     std::lock_guard<std::mutex> lock(mStatsLock);
 
     auto key = std::make_pair(name, pid);
@@ -314,13 +321,13 @@ void WakeLockEntryList::updateOnRelease(const std::string& name, int pid,
         WakeLockInfo updatedEntry = *staleEntry;
 
         // Update entry
-        TimestampType timeDelta = epochTimeNow - updatedEntry.lastChange;
+        TimestampType timeDelta = timeNow - updatedEntry.lastChange;
         updatedEntry.isActive = false;
         updatedEntry.activeTime += timeDelta;
         updatedEntry.maxTime = std::max(updatedEntry.maxTime, updatedEntry.activeTime);
         updatedEntry.activeTime = 0;  // No longer active
         updatedEntry.totalTime += timeDelta;
-        updatedEntry.lastChange = epochTimeNow;
+        updatedEntry.lastChange = timeNow;
 
         deleteEntry(staleEntry);
         insertEntry(std::move(updatedEntry));
@@ -332,15 +339,15 @@ void WakeLockEntryList::updateOnRelease(const std::string& name, int pid,
 void WakeLockEntryList::updateNow() {
     std::lock_guard<std::mutex> lock(mStatsLock);
 
-    TimestampType epochTimeNow = getEpochTimeNow();
+    TimestampType timeNow = getTimeNow();
 
     for (std::list<WakeLockInfo>::iterator it = mStats.begin(); it != mStats.end(); ++it) {
         if (it->isActive) {
-            TimestampType timeDelta = epochTimeNow - it->lastChange;
+            TimestampType timeDelta = timeNow - it->lastChange;
             it->activeTime += timeDelta;
             it->maxTime = std::max(it->maxTime, it->activeTime);
             it->totalTime += timeDelta;
-            it->lastChange = epochTimeNow;
+            it->lastChange = timeNow;
         }
     }
 }

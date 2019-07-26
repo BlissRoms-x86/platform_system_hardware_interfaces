@@ -72,7 +72,7 @@ class SystemSuspend : public ISystemSuspend {
     bool forceSuspend();
 
     const WakeLockEntryList& getStatsList() const;
-    void updateWakeLockStatOnRelease(const std::string& name, int pid, TimestampType epochTimeNow);
+    void updateWakeLockStatOnRelease(const std::string& name, int pid, TimestampType timeNow);
     void updateStatsNow();
 
    private:
