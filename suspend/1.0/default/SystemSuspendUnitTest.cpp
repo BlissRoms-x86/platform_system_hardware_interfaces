@@ -52,7 +52,7 @@ using android::hardware::Void;
 using android::system::suspend::BnSuspendCallback;
 using android::system::suspend::ISuspendControlService;
 using android::system::suspend::WakeLockInfo;
-using android::system::suspend::V1_0::getEpochTimeNow;
+using android::system::suspend::V1_0::getTimeNow;
 using android::system::suspend::V1_0::ISystemSuspend;
 using android::system::suspend::V1_0::IWakeLock;
 using android::system::suspend::V1_0::readFd;
