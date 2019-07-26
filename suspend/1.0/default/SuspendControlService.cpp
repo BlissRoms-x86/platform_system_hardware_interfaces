@@ -98,6 +98,21 @@ binder::Status SuspendControlService::getWakeLockStats(std::vector<WakeLockInfo>
     return binder::Status::ok();
 }
 
+status_t SuspendControlService::dump(int fd, const Vector<String16>& /*args*/) {
+    const auto suspendService = mSuspend.promote();
+    if (!suspendService) {
+        return DEAD_OBJECT;
+    }
+
+    suspendService->updateStatsNow();
+
+    std::stringstream ss;
+    ss << suspendService->getStatsList();
+
+    dprintf(fd, "%s\n", ss.str().c_str());
+    return OK;
+}
+
 }  // namespace V1_0
 }  // namespace suspend
 }  // namespace system
