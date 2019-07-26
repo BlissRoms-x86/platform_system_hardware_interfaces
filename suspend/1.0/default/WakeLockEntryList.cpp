@@ -19,12 +19,91 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 
+#include <iomanip>
+
 using android::base::ReadFdToString;
 
 namespace android {
 namespace system {
 namespace suspend {
 namespace V1_0 {
+
+static std::ostream& operator<<(std::ostream& out, const WakeLockInfo& entry) {
+    const char* sep = " | ";
+    const char* notApplicable = "---";
+    bool kernelWakelock = entry.isKernelWakelock;
+
+    // clang-format off
+    out << sep
+        << std::left << std::setw(30) << entry.name << sep
+        << std::right << std::setw(6)
+        << ((kernelWakelock) ? notApplicable : std::to_string(entry.pid)) << sep
+        << std::left << std::setw(6) << ((kernelWakelock) ? "Kernel" : "Native") << sep
+        << std::left << std::setw(8) << ((entry.isActive) ? "Active" : "Inactive") << sep
+        << std::right << std::setw(12) << entry.activeCount << sep
+        << std::right << std::setw(12) << std::to_string(entry.totalTime) + "ms" << sep
+        << std::right << std::setw(12) << std::to_string(entry.maxTime) + "ms" << sep
+        << std::right << std::setw(12)
+        << ((kernelWakelock) ? std::to_string(entry.eventCount) : notApplicable) << sep
+        << std::right << std::setw(12)
+        << ((kernelWakelock) ? std::to_string(entry.wakeupCount) : notApplicable) << sep
+        << std::right << std::setw(12)
+        << ((kernelWakelock) ? std::to_string(entry.expireCount) : notApplicable) << sep
+        << std::right << std::setw(20)
+        << ((kernelWakelock) ? std::to_string(entry.preventSuspendTime) + "ms" : notApplicable)
+        << sep
+        << std::right << std::setw(16) << std::to_string(entry.lastChange) + "ms" << sep;
+    // clang-format on
+
+    return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const WakeLockEntryList& list) {
+    std::vector<WakeLockInfo> wlStats;
+    list.getWakeLockStats(&wlStats);
+    int width = 194;
+    const char* sep = " | ";
+    std::stringstream ss;
+    ss << "  " << std::setfill('-') << std::setw(width) << "\n";
+    std::string div = ss.str();
+
+    out << div;
+
+    std::stringstream header;
+    header << sep << std::right << std::setw(((width - 14) / 2) + 14) << "WAKELOCK STATS"
+           << std::right << std::setw((width - 14) / 2) << sep << "\n";
+    out << header.str();
+
+    out << div;
+
+    // Col names
+    // clang-format off
+    out << sep
+        << std::left << std::setw(30) << "NAME" << sep
+        << std::left << std::setw(6) << "PID" << sep
+        << std::left << std::setw(6) << "TYPE" << sep
+        << std::left << std::setw(8) << "STATUS" << sep
+        << std::left << std::setw(12) << "ACTIVE COUNT" << sep
+        << std::left << std::setw(12) << "TOTAL TIME" << sep
+        << std::left << std::setw(12) << "MAX TIME" << sep
+        << std::left << std::setw(12) << "EVENT COUNT" << sep
+        << std::left << std::setw(12) << "WAKEUP COUNT" << sep
+        << std::left << std::setw(12) << "EXPIRE COUNT" << sep
+        << std::left << std::setw(20) << "PREVENT SUSPEND TIME" << sep
+        << std::left << std::setw(16) << "LAST CHANGE" << sep
+        << "\n";
+    // clang-format on
+
+    out << div;
+
+    // Rows
+    for (const WakeLockInfo& entry : wlStats) {
+        out << entry << "\n";
+    }
+
+    out << div;
+    return out;
+}
 
 TimestampType getEpochTimeNow() {
     auto timeSinceEpoch = std::chrono::system_clock::now().time_since_epoch();
