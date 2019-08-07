@@ -433,21 +433,25 @@ class SystemSuspendSameThreadTest : public ::testing::Test {
                            int64_t expireCount = 42, int64_t lastChange = 42, int64_t maxTime = 42,
                            int64_t preventSuspendTime = 42, int64_t totalTime = 42,
                            int64_t wakeupCount = 42) {
-        if ((mkdirat(kernelWakelockStatsFd, name.c_str(), S_IRWXU)) < 0) {
-            PLOG(ERROR) << "SystemSuspend: Error creating directory for " << name << " wakelock";
+        static int id = 0;
+        std::string kwlId = "wakeup" + std::to_string(id++);
+
+        if ((mkdirat(kernelWakelockStatsFd, kwlId.c_str(), S_IRWXU)) < 0) {
+            PLOG(ERROR) << "SystemSuspend: Error creating directory for " << kwlId;
             return false;
         }
 
         unique_fd kernelWakelockFd{TEMP_FAILURE_RETRY(
-            openat(kernelWakelockStatsFd, name.c_str(), O_DIRECTORY | O_CLOEXEC | O_RDONLY))};
+            openat(kernelWakelockStatsFd, kwlId.c_str(), O_DIRECTORY | O_CLOEXEC | O_RDONLY))};
         if (kernelWakelockFd < 0) {
-            PLOG(ERROR) << "SystemSuspend: Error opening " << name;
+            PLOG(ERROR) << "SystemSuspend: Error opening " << kwlId;
             return false;
         }
 
         int fd = kernelWakelockFd.get();
 
-        return writeStatToFile(fd, "active_count", activeCount) &&
+        return writeStatToFile(fd, "name", name) &&
+               writeStatToFile(fd, "active_count", activeCount) &&
                writeStatToFile(fd, "active_time_ms", activeTime) &&
                writeStatToFile(fd, "event_count", eventCount) &&
                writeStatToFile(fd, "expire_count", expireCount) &&
