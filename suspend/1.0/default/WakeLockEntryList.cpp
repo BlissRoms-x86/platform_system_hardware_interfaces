@@ -184,10 +184,8 @@ WakeLockInfo WakeLockEntryList::createNativeEntry(const std::string& name, int p
 /*
  * Creates and returns a kernel wakelock entry with data read from mKernelWakelockStatsFd
  */
-WakeLockInfo WakeLockEntryList::createKernelEntry(const std::string& name) const {
+WakeLockInfo WakeLockEntryList::createKernelEntry(const std::string& kwlId) const {
     WakeLockInfo info;
-
-    info.name = name;
 
     info.activeCount = 0;
     info.lastChange = 0;
@@ -205,9 +203,9 @@ WakeLockInfo WakeLockEntryList::createKernelEntry(const std::string& name) const
     info.wakeupCount = 0;
 
     unique_fd wakelockFd{TEMP_FAILURE_RETRY(
-        openat(mKernelWakelockStatsFd, name.c_str(), O_DIRECTORY | O_CLOEXEC | O_RDONLY))};
+        openat(mKernelWakelockStatsFd, kwlId.c_str(), O_DIRECTORY | O_CLOEXEC | O_RDONLY))};
     if (wakelockFd < 0) {
-        PLOG(ERROR) << "Error opening kernel wakelock stats for: " << name;
+        PLOG(ERROR) << "Error opening kernel wakelock stats for: " << kwlId;
     }
 
     std::unique_ptr<DIR, decltype(&closedir)> wakelockDp(fdopendir(dup(wakelockFd.get())),
@@ -224,14 +222,20 @@ WakeLockInfo WakeLockEntryList::createKernelEntry(const std::string& name) const
             unique_fd statFd{
                 TEMP_FAILURE_RETRY(openat(wakelockFd, statName.c_str(), O_CLOEXEC | O_RDONLY))};
             if (statFd < 0) {
-                PLOG(ERROR) << "Error opening " << statName << " for " << name << " wakelock";
+                PLOG(ERROR) << "Error opening " << statName << " for " << kwlId;
             }
 
             std::string valStr;
             if (!ReadFdToString(statFd.get(), &valStr)) {
-                PLOG(ERROR) << "Error reading " << statName << " for " << name << " wakelock";
+                PLOG(ERROR) << "Error reading " << statName << " for " << kwlId;
                 continue;
             }
+
+            if (statName == "name") {
+                info.name = valStr;
+                continue;
+            }
+
             int64_t statVal = std::stoll(valStr);
 
             if (statName == "active_count") {
@@ -271,11 +275,11 @@ void WakeLockEntryList::getKernelWakelockStats(std::vector<WakeLockInfo>* aidl_r
 
         struct dirent* de;
         while ((de = readdir(dp.get()))) {
-            std::string kwlName(de->d_name);
-            if ((kwlName == ".") || (kwlName == "..")) {
+            std::string kwlId(de->d_name);
+            if ((kwlId == ".") || (kwlId == "..")) {
                 continue;
             }
-            WakeLockInfo entry = createKernelEntry(kwlName);
+            WakeLockInfo entry = createKernelEntry(kwlId);
             aidl_return->emplace_back(std::move(entry));
         }
     } else {
