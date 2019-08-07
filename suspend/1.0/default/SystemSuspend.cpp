@@ -28,6 +28,7 @@
 #include <string>
 #include <thread>
 
+using ::android::base::Error;
 using ::android::base::ReadFdToString;
 using ::android::base::WriteStringToFd;
 using ::android::hardware::Void;
@@ -79,7 +80,7 @@ void WakeLock::releaseOnce() {
     });
 }
 
-SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd,
+SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_fd suspendStatsFd,
                              size_t maxNativeStatsEntries, unique_fd kernelWakelockStatsFd,
                              std::chrono::milliseconds baseSleepTime,
                              const sp<SuspendControlService>& controlService,
@@ -87,6 +88,7 @@ SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd,
     : mSuspendCounter(0),
       mWakeupCountFd(std::move(wakeupCountFd)),
       mStateFd(std::move(stateFd)),
+      mSuspendStatsFd(std::move(suspendStatsFd)),
       mBaseSleepTime(baseSleepTime),
       mSleepTime(baseSleepTime),
       mControlService(controlService),
@@ -227,6 +229,78 @@ const WakeLockEntryList& SystemSuspend::getStatsList() const {
 
 void SystemSuspend::updateStatsNow() {
     mStatsList.updateNow();
+}
+
+/**
+ * Returns suspend stats.
+ */
+Result<SuspendStats> SystemSuspend::getSuspendStats() {
+    std::unique_ptr<DIR, decltype(&closedir)> dp(fdopendir(dup(mSuspendStatsFd.get())), &closedir);
+    if (!dp) {
+        return Error() << "Failed to get directory pointer to suspend_stats dir";
+    }
+
+    SuspendStats stats;
+
+    // rewinddir, else subsequent calls will not get any suspend_stats
+    rewinddir(dp.get());
+
+    struct dirent* de;
+
+    // Grab a wakelock before reading suspend stats,
+    // to ensure a consistent snapshot.
+    sp<IWakeLock> suspendStatsLock = acquireWakeLock(WakeLockType::PARTIAL, "suspend_stats_lock");
+
+    while ((de = readdir(dp.get()))) {
+        std::string statName(de->d_name);
+        if ((statName == ".") || (statName == "..")) {
+            continue;
+        }
+
+        unique_fd statFd{TEMP_FAILURE_RETRY(
+            openat(mSuspendStatsFd.get(), statName.c_str(), O_CLOEXEC | O_RDONLY))};
+        if (statFd < 0) {
+            return Error() << "Failed to open " << statName;
+        }
+
+        std::string valStr;
+        if (!ReadFdToString(statFd.get(), &valStr)) {
+            return Error() << "Failed to read " << statName;
+        }
+
+        if (statName == "last_failed_dev") {
+            stats.lastFailedDev = valStr;
+        } else if (statName == "last_failed_step") {
+            stats.lastFailedStep = valStr;
+        } else {
+            int statVal = std::stoi(valStr);
+            if (statName == "success") {
+                stats.success = statVal;
+            } else if (statName == "fail") {
+                stats.fail = statVal;
+            } else if (statName == "failed_freeze") {
+                stats.failedFreeze = statVal;
+            } else if (statName == "failed_prepare") {
+                stats.failedPrepare = statVal;
+            } else if (statName == "failed_suspend") {
+                stats.failedSuspend = statVal;
+            } else if (statName == "failed_suspend_late") {
+                stats.failedSuspendLate = statVal;
+            } else if (statName == "failed_suspend_noirq") {
+                stats.failedSuspendNoirq = statVal;
+            } else if (statName == "failed_resume") {
+                stats.failedResume = statVal;
+            } else if (statName == "failed_resume_early") {
+                stats.failedResumeEarly = statVal;
+            } else if (statName == "failed_resume_noirq") {
+                stats.failedResumeNoirq = statVal;
+            } else if (statName == "last_failed_errno") {
+                stats.lastFailedErrno = statVal;
+            }
+        }
+    }
+
+    return stats;
 }
 
 }  // namespace V1_0

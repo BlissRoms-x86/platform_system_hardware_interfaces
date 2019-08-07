@@ -17,6 +17,7 @@
 #ifndef ANDROID_SYSTEM_SYSTEM_SUSPEND_V1_0_H
 #define ANDROID_SYSTEM_SYSTEM_SUSPEND_V1_0_H
 
+#include <android-base/result.h>
 #include <android-base/unique_fd.h>
 #include <android/system/suspend/1.0/ISystemSuspend.h>
 #include <hidl/HidlTransportSupport.h>
@@ -33,6 +34,7 @@ namespace system {
 namespace suspend {
 namespace V1_0 {
 
+using ::android::base::Result;
 using ::android::base::unique_fd;
 using ::android::hardware::hidl_string;
 using ::android::hardware::interfacesEqual;
@@ -41,6 +43,22 @@ using ::android::hardware::Return;
 using namespace std::chrono_literals;
 
 class SystemSuspend;
+
+struct SuspendStats {
+    int success = 0;
+    int fail = 0;
+    int failedFreeze = 0;
+    int failedPrepare = 0;
+    int failedSuspend = 0;
+    int failedSuspendLate = 0;
+    int failedSuspendNoirq = 0;
+    int failedResume = 0;
+    int failedResumeEarly = 0;
+    int failedResumeNoirq = 0;
+    std::string lastFailedDev;
+    int lastFailedErrno = 0;
+    std::string lastFailedStep;
+};
 
 std::string readFd(int fd);
 
@@ -62,8 +80,9 @@ class WakeLock : public IWakeLock {
 
 class SystemSuspend : public ISystemSuspend {
    public:
-    SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, size_t maxNativeStatsEntries,
-                  unique_fd kernelWakelockStatsFd, std::chrono::milliseconds baseSleepTime,
+    SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_fd suspendStatsFd,
+                  size_t maxNativeStatsEntries, unique_fd kernelWakelockStatsFd,
+                  std::chrono::milliseconds baseSleepTime,
                   const sp<SuspendControlService>& controlService, bool useSuspendCounter = true);
     Return<sp<IWakeLock>> acquireWakeLock(WakeLockType type, const hidl_string& name) override;
     void incSuspendCounter(const std::string& name);
@@ -74,6 +93,7 @@ class SystemSuspend : public ISystemSuspend {
     const WakeLockEntryList& getStatsList() const;
     void updateWakeLockStatOnRelease(const std::string& name, int pid, TimestampType timeNow);
     void updateStatsNow();
+    Result<SuspendStats> getSuspendStats();
 
    private:
     void initAutosuspend();
@@ -83,6 +103,8 @@ class SystemSuspend : public ISystemSuspend {
     uint32_t mSuspendCounter;
     unique_fd mWakeupCountFd;
     unique_fd mStateFd;
+
+    unique_fd mSuspendStatsFd;
 
     // Amount of sleep time between consecutive iterations of the suspend loop.
     std::chrono::milliseconds mBaseSleepTime;
