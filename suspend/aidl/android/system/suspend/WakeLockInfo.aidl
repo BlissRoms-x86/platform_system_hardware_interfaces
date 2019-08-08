@@ -25,17 +25,17 @@ package android.system.suspend;
  *
  * @name:               Name of wake lock (Not guaranteed to be unique).
  * @activeCount:        Number of times the wake lock was activated.
- * @lastChange:         Monotonic time when the wake lock was last touched.
- * @maxTime:            Maximum time (in us) this wake lock has been continuously active.
- * @totalTime:          Total time (in us) this wake lock has been active.
+ * @lastChange:         Monotonic time (in ms) when the wake lock was last touched.
+ * @maxTime:            Maximum time (in ms) this wake lock has been continuously active.
+ * @totalTime:          Total time (in ms) this wake lock has been active.
  * @isActive:           Status of wake lock.
- * @activeTime:         Time since wake lock was actived, 0 if wake lock is not active.
+ * @activeTime:         Time since wake lock was activated, 0 if wake lock is not active.
  * @isKernelWakelock:   True if kernel wake lock, false if native wake lock.
  *
  * The stats below are specific to NATIVE wake locks and hold no valid
  * data in the context of kernel wake locks.
  *
- * @pid:                Pid of process that aqcuired native wake lock.
+ * @pid:                Pid of process that acquired native wake lock.
  *
  * The stats below are specific to KERNEL wake locks and hold no valid
  * data in the context of native wake locks.
