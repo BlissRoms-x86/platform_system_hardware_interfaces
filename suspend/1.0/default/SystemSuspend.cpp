@@ -268,6 +268,9 @@ Result<SuspendStats> SystemSuspend::getSuspendStats() {
             return Error() << "Failed to read " << statName;
         }
 
+        // Trim newline
+        valStr.erase(std::remove(valStr.begin(), valStr.end(), '\n'), valStr.end());
+
         if (statName == "last_failed_dev") {
             stats.lastFailedDev = valStr;
         } else if (statName == "last_failed_step") {
