@@ -231,6 +231,9 @@ WakeLockInfo WakeLockEntryList::createKernelEntry(const std::string& kwlId) cons
                 continue;
             }
 
+            // Trim newline
+            valStr.erase(std::remove(valStr.begin(), valStr.end(), '\n'), valStr.end());
+
             if (statName == "name") {
                 info.name = valStr;
                 continue;
