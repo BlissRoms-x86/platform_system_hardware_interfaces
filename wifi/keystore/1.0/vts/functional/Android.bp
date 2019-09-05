@@ -24,7 +24,6 @@ cc_test {
         "liblog",
         "libcutils",
         "libhidlbase",
-        "libhidltransport",
         "libnativehelper",
         "libutils",
         "libkeystore_binder",
@@ -33,7 +32,6 @@ cc_test {
         "libkeystore_parcelables",
         "libkeymaster4support",
         "libbinderthreadstate",
-        "libhwbinder",
     ],
     static_libs: [
         "VtsHalHidlTargetTestBase",

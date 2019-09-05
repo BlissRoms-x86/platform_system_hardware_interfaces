@@ -19,8 +19,6 @@ cc_defaults {
         "libbinder",
         "libcutils",
         "libhidlbase",
-        "libhidltransport",
-        "libhwbinder",
         "liblog",
         "libutils",
     ],
