@@ -12,7 +12,6 @@ cc_library_shared {
         "libbinder",
         "libcutils",
         "libhidlbase",
-        "libhidltransport",
         "libkeystore_aidl",
         "libkeystore_binder",
         "libkeystore_parcelables",
