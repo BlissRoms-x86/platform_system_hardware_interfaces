@@ -254,21 +254,24 @@ TEST_F(WifiKeystoreHalTest, Sign_empty_data) {
         GTEST_SKIP() << "Device not running a debuggable build, cannot make test keys";
     }
 
-    IKeystore::KeystoreStatusCode statusCode;
+    bool callbackInvoked = false;
 
-    auto callback = [&statusCode](IKeystore::KeystoreStatusCode status,
-                                  const ::android::hardware::hidl_vec<uint8_t>& /*value*/) {
-        statusCode = status;
+    auto callback = [&callbackInvoked](IKeystore::KeystoreStatusCode /*status*/,
+                                       const ::android::hardware::hidl_vec<uint8_t>& /*value*/) {
+        // The result is ignored; this callback is a no-op.
+        callbackInvoked = true;
         return;
     };
 
     bool result = generateKey(kTestKeyName, KeyPurpose::SIGNING, AID_WIFI);
     EXPECT_EQ(result, true);
 
-    // The data to sign is empty, and a failure is expected
+    // The data to sign is empty. The return code is not important, and the attempt could be
+    // interpreted as valid or an error case. The goal is to determine that the callback
+    // was invokved.
     ::android::hardware::hidl_vec<uint8_t> dataToSign;
     keystore->sign(kTestKeyName, dataToSign, callback);
-    EXPECT_EQ(IKeystore::KeystoreStatusCode::ERROR_UNKNOWN, statusCode);
+    EXPECT_EQ(true, callbackInvoked);
 }
 
 TEST_F(WifiKeystoreHalTest, Sign_wrong_key_purpose) {
