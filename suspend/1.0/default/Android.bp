@@ -79,5 +79,6 @@ cc_test {
         "WakeLockEntryList.cpp",
     ],
     test_suites: ["device-tests"],
+    require_root: true,
 }
 
