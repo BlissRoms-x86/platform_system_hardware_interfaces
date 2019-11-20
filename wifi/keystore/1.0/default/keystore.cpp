@@ -311,9 +311,9 @@ Return<void> Keystore::sign(const hidl_string& keyId, const hidl_vec<uint8_t>& d
     promise = new OperationResultPromise();
     future = promise->get_future();
 
-    binder_result = service->finish(promise, handle, KeymasterArguments(params),
-                                    std::vector<uint8_t>() /* signature */,
-                                    std::vector<uint8_t>() /* entropy */, &error_code);
+    binder_result = service->finish(
+        promise, handle, KeymasterArguments(params), std::vector<uint8_t>() /* input */,
+        std::vector<uint8_t>() /* signature */, std::vector<uint8_t>() /* entropy */, &error_code);
     if (!binder_result.isOk()) {
         LOG(ERROR) << AT << "communication error while calling keystore";
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
