@@ -235,12 +235,11 @@ void SystemSuspend::updateStatsNow() {
  * Returns suspend stats.
  */
 Result<SuspendStats> SystemSuspend::getSuspendStats() {
+    SuspendStats stats;
     std::unique_ptr<DIR, decltype(&closedir)> dp(fdopendir(dup(mSuspendStatsFd.get())), &closedir);
     if (!dp) {
-        return Error() << "Failed to get directory pointer to suspend_stats dir";
+        return stats;
     }
-
-    SuspendStats stats;
 
     // rewinddir, else subsequent calls will not get any suspend_stats
     rewinddir(dp.get());
