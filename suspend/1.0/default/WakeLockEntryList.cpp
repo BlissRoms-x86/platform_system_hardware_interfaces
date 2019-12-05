@@ -298,9 +298,6 @@ void WakeLockEntryList::getKernelWakelockStats(std::vector<WakeLockInfo>* aidl_r
             WakeLockInfo entry = createKernelEntry(kwlId);
             aidl_return->emplace_back(std::move(entry));
         }
-    } else {
-        PLOG(ERROR)
-            << "SystemSuspend: Failed to get directory pointer to kernel wakelock stats dir";
     }
 }
 
