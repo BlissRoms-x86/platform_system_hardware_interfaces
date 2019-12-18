@@ -82,3 +82,16 @@ cc_test {
     require_root: true,
 }
 
+cc_benchmark {
+    name: "SystemSuspendBenchmark",
+    defaults: [
+        "system_suspend_defaults",
+    ],
+    shared_libs: [
+        "android.system.suspend@1.0",
+        "suspend_control_aidl_interface-cpp",
+    ],
+    srcs: [
+        "SystemSuspendBenchmark.cpp",
+    ],
+}
