@@ -172,9 +172,7 @@ Return<void> Keystore::getPublicKey(const hidl_string& keyId, getPublicKey_cb _h
         return Void();
     }
 
-    // convert to PEM before sending it to openssl library.
-    std::vector<uint8_t> pem_cert = convertCertToPem(export_result.exportData);
-    _hidl_cb(KeystoreStatusCode::SUCCESS, pem_cert);
+    _hidl_cb(KeystoreStatusCode::SUCCESS, export_result.exportData);
     return Void();
 }
 
