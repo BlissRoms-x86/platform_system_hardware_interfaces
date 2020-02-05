@@ -1,7 +1,7 @@
 {
   "presubmit": [
     {
-      "name": "hidl_implementation_test"
+      "name": "hal_implementation_test"
     }
   ]
 }
