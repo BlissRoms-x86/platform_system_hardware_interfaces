@@ -32,7 +32,6 @@ cc_test {
         "libkeystore_aidl",
         "libkeystore_parcelables",
         "libkeymaster4support",
-        "libbinderthreadstate",
     ],
     static_libs: [
         "VtsHalHidlTargetTestBase",
