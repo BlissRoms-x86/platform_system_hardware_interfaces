@@ -142,7 +142,7 @@ status_t SuspendControlService::dump(int fd, const Vector<String16>& args) {
     }
     if (suspend_stats) {
         Result<SuspendStats> res = suspendService->getSuspendStats();
-        if (!res) {
+        if (!res.ok()) {
             LOG(ERROR) << "SuspendControlService: " << res.error().message();
             return OK;
         }
