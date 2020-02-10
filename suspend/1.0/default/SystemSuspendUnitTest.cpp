@@ -804,8 +804,7 @@ TEST_F(SystemSuspendSameThreadTest, GetSuspendStats) {
     addSuspendStats();
 
     Result<SuspendStats> res = getSuspendStats();
-
-    ASSERT_TRUE(res);
+    ASSERT_RESULT_OK(res);
 
     SuspendStats stats = res.value();
 
