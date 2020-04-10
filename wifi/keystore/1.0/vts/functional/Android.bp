@@ -43,7 +43,7 @@ cc_test {
         "-Wall",
         "-Werror",
     ],
-    test_suites: ["general-tests", "vts-core"],
+    test_suites: ["general-tests", "vts"],
 }
 
 vts_config {
