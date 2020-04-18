@@ -27,4 +27,6 @@ cc_test {
         "liblog",
         "libutils",
     ],
+    require_root: true,
+    test_suites: ["vts"],
 }
