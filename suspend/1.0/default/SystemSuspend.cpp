@@ -18,6 +18,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/strings.h>
 #include <fcntl.h>
 #include <hidl/Status.h>
@@ -28,6 +29,7 @@
 #include <string>
 #include <thread>
 
+using ::android::base::GetProperty;
 using ::android::base::Error;
 using ::android::base::ReadFdToString;
 using ::android::base::WriteStringToFd;
@@ -129,7 +131,7 @@ bool SystemSuspend::forceSuspend() {
     //  returns from suspend, the wakelocks and SuspendCounter will not have
     //  changed.
     auto counterLock = std::unique_lock(mCounterLock);
-    bool success = WriteStringToFd(kSleepState, mStateFd);
+    bool success = WriteStringToFd(getSleepState(), mStateFd);
     counterLock.unlock();
 
     if (!success) {
@@ -192,7 +194,7 @@ void SystemSuspend::initAutosuspend() {
                 PLOG(VERBOSE) << "error writing from /sys/power/wakeup_count";
                 continue;
             }
-            bool success = WriteStringToFd(kSleepState, mStateFd);
+            bool success = WriteStringToFd(getSleepState(), mStateFd);
             counterLock.unlock();
 
             if (!success) {
@@ -206,6 +208,25 @@ void SystemSuspend::initAutosuspend() {
     });
     autosuspendThread.detach();
     LOG(INFO) << "automatic system suspend enabled";
+}
+
+const string &SystemSuspend::getSleepState() {
+    if (mSleepState.empty()) {
+        mSleepState = GetProperty("sleep.state", "");
+        if (!mSleepState.empty()) {
+            LOG(INFO) << "autosuspend using sleep.state property " << mSleepState;
+        } else {
+            string buf = readFd(mStateFd);
+            if (buf.find(kSleepState) != std::string::npos) {
+                mSleepState = kSleepState;
+                LOG(INFO) << "autosuspend using default sleep_state " << mSleepState;
+            } else {
+                mSleepState = "freeze";
+                LOG(WARNING) << "autosuspend using fallback state " << mSleepState;
+            }
+        }
+    }
+    return mSleepState;
 }
 
 void SystemSuspend::updateSleepTime(bool success) {
