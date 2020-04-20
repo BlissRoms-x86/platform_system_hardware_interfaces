@@ -118,12 +118,14 @@ class SystemSuspend : public ISystemSuspend {
 
    private:
     void initAutosuspend();
+    const std::string &getSleepState();
 
     std::mutex mCounterLock;
     std::condition_variable mCounterCondVar;
     uint32_t mSuspendCounter;
     unique_fd mWakeupCountFd;
     unique_fd mStateFd;
+    std::string mSleepState;
 
     unique_fd mSuspendStatsFd;
     unique_fd mSuspendTimeFd;
