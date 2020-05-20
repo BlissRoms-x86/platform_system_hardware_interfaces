@@ -89,7 +89,7 @@ std::vector<uint8_t> convertCertToPem(const std::vector<uint8_t>& cert_bytes) {
     bssl::UniquePtr<X509> cert(d2i_X509_bio(cert_bio.get(), nullptr));
     if (!cert) {
         LOG(ERROR) << AT << "Could not create cert from BIO";
-        return {};
+        return cert_bytes;
     }
     bssl::UniquePtr<BIO> pem_bio(BIO_new(BIO_s_mem()));
     if (!PEM_write_bio_X509(pem_bio.get(), cert.get())) {
