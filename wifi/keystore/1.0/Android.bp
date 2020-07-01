@@ -3,9 +3,6 @@
 hidl_interface {
     name: "android.system.wifi.keystore@1.0",
     root: "android.system",
-    vndk: {
-        enabled: true,
-    },
     srcs: [
         "IKeystore.hal",
     ],
