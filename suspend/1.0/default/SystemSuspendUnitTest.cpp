@@ -826,7 +826,7 @@ TEST_F(SystemSuspendSameThreadTest, GetSuspendStats) {
 }  // namespace android
 
 int main(int argc, char** argv) {
-    setenv("TREBLE_TESTING_OVERRIDE", "true", true);
+    android::hardware::details::setTrebleTestingOverride(true);
     ::testing::InitGoogleMock(&argc, argv);
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
