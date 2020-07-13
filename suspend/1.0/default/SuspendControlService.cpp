@@ -18,6 +18,7 @@
 
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
+#include <signal.h>
 
 #include "SystemSuspend.h"
 
@@ -28,6 +29,10 @@ namespace android {
 namespace system {
 namespace suspend {
 namespace V1_0 {
+
+static void register_sig_handler() {
+    signal(SIGPIPE, SIG_IGN);
+}
 
 template <typename T>
 binder::Status retOk(const T& value, T* ret_val) {
@@ -113,6 +118,8 @@ static std::string dumpUsage() {
 }
 
 status_t SuspendControlService::dump(int fd, const Vector<String16>& args) {
+    register_sig_handler();
+
     const auto suspendService = mSuspend.promote();
     if (!suspendService) {
         return DEAD_OBJECT;
