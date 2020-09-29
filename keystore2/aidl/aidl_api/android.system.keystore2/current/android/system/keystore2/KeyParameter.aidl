@@ -16,10 +16,12 @@
 // later when a module using the interface is updated, e.g., Mainline modules.
 
 package android.system.keystore2;
-@RustDerive(Clone=true, Eq=true, Ord=true, PartialEq=true, PartialOrd=true) @VintfStability
-parcelable KeyDescriptor {
-  android.system.keystore2.Domain domain;
-  long nspace;
-  @nullable String alias;
+@VintfStability
+parcelable KeyParameter {
+  int tag;
+  boolean boolValue;
+  int integer;
+  long longInteger;
+  long dateTime;
   @nullable byte[] blob;
 }

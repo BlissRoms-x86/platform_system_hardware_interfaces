@@ -16,18 +16,10 @@
 
 package android.system.keystore2;
 
-import android.system.keystore2.Authorization;
-import android.system.keystore2.KeyDescriptor;
-import android.system.keystore2.SecurityLevel;
-
-/**
- * Metadata of a key entry including the key characteristics `authorizations`
- * security level `securityLevel` and a key id based key descriptor.
- * See KeyDescriptor.aidl for the benefits of key id based key descriptor usage.
- */
 @VintfStability
-parcelable KeyMetadata {
-    KeyDescriptor key;
-    SecurityLevel securityLevel;
-    Authorization[] authorizations;
+@Backing(type="int")
+enum SecurityLevel {
+    SOFTWARE = 0,
+    TRUSTED_ENVIRONMENT = 1,
+    STRONGBOX = 2,
 }
