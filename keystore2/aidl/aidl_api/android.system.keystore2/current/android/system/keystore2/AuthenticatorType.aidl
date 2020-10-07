@@ -16,10 +16,10 @@
 // later when a module using the interface is updated, e.g., Mainline modules.
 
 package android.system.keystore2;
-@RustDerive(Clone=true, Eq=true, Ord=true, PartialEq=true, PartialOrd=true) @VintfStability
-parcelable KeyDescriptor {
-  android.system.keystore2.Domain domain;
-  long nspace;
-  @nullable String alias;
-  @nullable byte[] blob;
+@Backing(type="int") @VintfStability
+enum AuthenticatorType {
+  NONE = 0,
+  PASSWORD = 1,
+  FINGERPRINT = 2,
+  ANY = -1,
 }
