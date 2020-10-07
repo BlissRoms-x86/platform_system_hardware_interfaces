@@ -49,6 +49,7 @@ import android.system.keystore2.Domain;
  * must additionally check if the caller has `ManageBlob` permission. See KeyPermission.aidl.
  */
 @VintfStability
+@RustDerive(Clone=true, Eq=true, PartialEq=true, Ord=true, PartialOrd=true)
 parcelable KeyDescriptor {
     Domain domain;
     long nspace; /* namespace is a keyword in C++, so we had a to pick a different field name. */
