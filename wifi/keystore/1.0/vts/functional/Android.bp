@@ -45,8 +45,3 @@ cc_test {
     ],
     test_suites: ["general-tests", "vts"],
 }
-
-vts_config {
-    name: "VtsHalWifiKeystoreV1_0Target",
-    test_config: "wifi_keystore_target.xml",
-}
