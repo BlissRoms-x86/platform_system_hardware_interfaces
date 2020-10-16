@@ -81,7 +81,7 @@ void SuspendControlService::binderDied(const wp<IBinder>& who) {
     mCallbacks.erase(findCb(who));
 }
 
-void SuspendControlService::notifyWakeup(bool success) {
+void SuspendControlService::notifyWakeup(bool success, std::vector<std::string>& wakeupReasons) {
     // A callback could potentially modify mCallbacks (e.g., via registerCallback). That must not
     // result in a deadlock. To that end, we make a copy of mCallbacks and release mCallbackLock
     // before calling the copied callbacks.
