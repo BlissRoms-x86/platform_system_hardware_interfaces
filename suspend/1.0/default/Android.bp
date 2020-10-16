@@ -34,7 +34,6 @@ cc_defaults {
     cflags: [
         "-Wall",
         "-Werror",
-        "-Wno-unused-parameter",
     ],
 }
 
