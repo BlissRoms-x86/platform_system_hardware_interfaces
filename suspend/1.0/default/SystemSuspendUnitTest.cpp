@@ -363,7 +363,7 @@ TEST_F(SystemSuspendTest, DeadCallback) {
 class CbRegisteringCb : public BnSuspendCallback {
    public:
     CbRegisteringCb(sp<ISuspendControlService> controlService) : mControlService(controlService) {}
-    binder::Status notifyWakeup(bool x) {
+    binder::Status notifyWakeup([[maybe_unused]] bool x) {
         sp<MockCallback> cb = new MockCallback(nullptr);
         cb->disable();
         bool retval = false;
