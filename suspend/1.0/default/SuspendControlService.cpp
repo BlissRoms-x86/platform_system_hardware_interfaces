@@ -123,6 +123,28 @@ void SuspendControlService::binderDied(const wp<IBinder>& who) {
     }
 }
 
+void SuspendControlService::notifyWakelock(const std::string& name, bool isAcquired) {
+    // A callback could potentially modify mWakelockCallbacks (e.g., via registerCallback). That
+    // must not result in a deadlock. To that end, we make a copy of the callback is an entry can be
+    // found for the particular wakelock  and release mCallbackLock before calling the copied
+    // callbacks.
+    auto callbackLock = std::unique_lock(mWakelockCallbackLock);
+    auto it = mWakelockCallbacks.find(name);
+    if (it == mWakelockCallbacks.end()) {
+        return;
+    }
+    auto callbacksCopy = it->second;
+    callbackLock.unlock();
+
+    for (const auto& callback : callbacksCopy) {
+        if (isAcquired) {
+            callback->notifyAcquired().isOk();  // ignore errors
+        } else {
+            callback->notifyReleased().isOk();  // ignore errors
+        }
+    }
+}
+
 void SuspendControlService::notifyWakeup(bool success, std::vector<std::string>& wakeupReasons) {
     // A callback could potentially modify mCallbacks (e.g., via registerCallback). That must not
     // result in a deadlock. To that end, we make a copy of mCallbacks and release mCallbackLock
