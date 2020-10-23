@@ -71,6 +71,29 @@ binder::Status SuspendControlService::registerCallback(const sp<ISuspendCallback
     return retOk(true, _aidl_return);
 }
 
+binder::Status SuspendControlService::registerWakelockCallback(
+    const sp<IWakelockCallback>& callback, const std::string& name, bool* _aidl_return) {
+    if (!callback || name.empty()) {
+        return retOk(false, _aidl_return);
+    }
+
+    auto l = std::lock_guard(mWakelockCallbackLock);
+    if (std::find(mWakelockCallbacks[name].begin(), mWakelockCallbacks[name].end(), callback) !=
+        mWakelockCallbacks[name].end()) {
+        LOG(ERROR) << __func__ << " Same wakelock callback has already been registered";
+        return retOk(false, _aidl_return);
+    }
+
+    if (IInterface::asBinder(callback)->remoteBinder() &&
+        IInterface::asBinder(callback)->linkToDeath(this) != NO_ERROR) {
+        LOG(WARNING) << __func__ << " Cannot link to death";
+        return retOk(false, _aidl_return);
+    }
+    mWakelockCallbacks[name].push_back(callback);
+
+    return retOk(true, _aidl_return);
+}
+
 binder::Status SuspendControlService::forceSuspend(bool* _aidl_return) {
     const auto suspendService = mSuspend.promote();
     return retOk(suspendService != nullptr && suspendService->forceSuspend(), _aidl_return);
@@ -79,6 +102,25 @@ binder::Status SuspendControlService::forceSuspend(bool* _aidl_return) {
 void SuspendControlService::binderDied(const wp<IBinder>& who) {
     auto l = std::lock_guard(mCallbackLock);
     mCallbacks.erase(findCb(who));
+
+    auto lWakelock = std::lock_guard(mWakelockCallbackLock);
+    // Iterate through all wakelock names as same callback can be registered with different
+    // wakelocks.
+    for (auto wakelockIt = mWakelockCallbacks.begin(); wakelockIt != mWakelockCallbacks.end();
+         ++wakelockIt) {
+        // Iterate through all callbacks but break on first found as a callback cannot registered
+        // twice to the same wakelock.
+        for (auto callbackIt = wakelockIt->second.begin(); callbackIt != wakelockIt->second.end();
+             ++callbackIt) {
+            if (who == IInterface::asBinder(*callbackIt)) {
+                wakelockIt->second.erase(callbackIt);
+                if (wakelockIt->second.empty()) {
+                    mWakelockCallbacks.erase(wakelockIt);
+                }
+                break;
+            }
+        }
+    }
 }
 
 void SuspendControlService::notifyWakeup(bool success, std::vector<std::string>& wakeupReasons) {

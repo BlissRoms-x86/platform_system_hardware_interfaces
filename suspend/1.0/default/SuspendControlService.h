@@ -21,6 +21,7 @@
 
 using ::android::system::suspend::BnSuspendControlService;
 using ::android::system::suspend::ISuspendCallback;
+using ::android::system::suspend::IWakelockCallback;
 
 namespace android {
 namespace system {
@@ -38,6 +39,8 @@ class SuspendControlService : public BnSuspendControlService,
     binder::Status enableAutosuspend(bool* _aidl_return) override;
     binder::Status registerCallback(const sp<ISuspendCallback>& callback,
                                     bool* _aidl_return) override;
+    binder::Status registerWakelockCallback(const sp<IWakelockCallback>& callback,
+                                            const std::string& name, bool* _aidl_return) override;
     binder::Status forceSuspend(bool* _aidl_return) override;
     binder::Status getWakeLockStats(std::vector<WakeLockInfo>* _aidl_return) override;
 
@@ -50,12 +53,14 @@ class SuspendControlService : public BnSuspendControlService,
    private:
     wp<SystemSuspend> mSuspend;
 
+    std::map<std::string, std::vector<sp<IWakelockCallback>>> mWakelockCallbacks;
     std::mutex mCallbackLock;
-    std::vector<sp<ISuspendCallback> > mCallbacks;
-    std::vector<sp<ISuspendCallback> >::iterator findCb(const wp<IBinder>& cb) {
+    std::mutex mWakelockCallbackLock;
+    std::vector<sp<ISuspendCallback>> mCallbacks;
+    const std::vector<sp<ISuspendCallback>>::iterator findCb(const wp<IBinder>& cb) {
         return std::find_if(
             mCallbacks.begin(), mCallbacks.end(),
-            [&cb](const sp<ISuspendCallback> i) { return cb == IInterface::asBinder(i); });
+            [&cb](const sp<ISuspendCallback>& i) { return cb == IInterface::asBinder(i); });
     }
 };
 
