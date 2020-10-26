@@ -16,10 +16,10 @@
 
 package android.system.keystore2;
 
+import android.hardware.keymint.SecurityLevel;
 import android.system.keystore2.Authorization;
 import android.system.keystore2.IKeystoreSecurityLevel;
 import android.system.keystore2.KeyDescriptor;
-import android.system.keystore2.SecurityLevel;
 
 /**
  * Metadata of a key entry including the key characteristics `authorizations`
