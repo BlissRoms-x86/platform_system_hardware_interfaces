@@ -90,7 +90,7 @@ void SuspendControlService::notifyWakeup(bool success, std::vector<std::string>&
     callbackLock.unlock();
 
     for (const auto& callback : callbacksCopy) {
-        callback->notifyWakeup(success).isOk();  // ignore errors
+        callback->notifyWakeup(success, wakeupReasons).isOk();  // ignore errors
     }
 }
 
