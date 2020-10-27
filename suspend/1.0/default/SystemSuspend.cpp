@@ -59,6 +59,27 @@ static inline int getCallingPid() {
     return ::android::hardware::IPCThreadState::self()->getCallingPid();
 }
 
+static std::vector<std::string> readWakeupReasons(int fd) {
+    std::vector<std::string> wakeupReasons;
+    std::string reasonline;
+
+    lseek(fd, 0, SEEK_SET);
+    std::stringstream ss(readFd(fd));
+
+    while (ss.good()) {
+        getline(ss, reasonline, '\n');
+        if (!reasonline.empty()) {
+            wakeupReasons.push_back(reasonline);
+        }
+    }
+
+    if (wakeupReasons.empty()) {
+        LOG(ERROR) << "failed to read wakeup reasons";
+        wakeupReasons.push_back("unknown");
+    }
+    return wakeupReasons;
+}
+
 WakeLock::WakeLock(SystemSuspend* systemSuspend, const string& name, int pid)
     : mReleased(), mSystemSuspend(systemSuspend), mName(name), mPid(pid) {
     mSystemSuspend->incSuspendCounter(mName);
@@ -82,7 +103,7 @@ void WakeLock::releaseOnce() {
 
 SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_fd suspendStatsFd,
                              size_t maxNativeStatsEntries, unique_fd kernelWakelockStatsFd,
-                             std::chrono::milliseconds baseSleepTime,
+                             unique_fd wakeupReasonsFd, std::chrono::milliseconds baseSleepTime,
                              const sp<SuspendControlService>& controlService,
                              bool useSuspendCounter)
     : mSuspendCounter(0),
@@ -95,7 +116,8 @@ SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_
       mStatsList(maxNativeStatsEntries, std::move(kernelWakelockStatsFd)),
       mUseSuspendCounter(useSuspendCounter),
       mWakeLockFd(-1),
-      mWakeUnlockFd(-1) {
+      mWakeUnlockFd(-1),
+      mWakeupReasonsFd(std::move(wakeupReasonsFd)) {
     mControlService->setSuspendService(this);
 
     if (!mUseSuspendCounter) {
@@ -199,7 +221,8 @@ void SystemSuspend::initAutosuspend() {
                 PLOG(VERBOSE) << "error writing to /sys/power/state";
             }
 
-            mControlService->notifyWakeup(success);
+            std::vector<std::string> wakeupReasons = readWakeupReasons(mWakeupReasonsFd);
+            mControlService->notifyWakeup(success, wakeupReasons);
 
             updateSleepTime(success);
         }

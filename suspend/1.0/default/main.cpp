@@ -46,6 +46,7 @@ static constexpr char kSysClassWakeup[] = "/sys/class/wakeup";
 static constexpr char kSysPowerSuspendStats[] = "/sys/power/suspend_stats";
 static constexpr char kSysPowerWakeupCount[] = "/sys/power/wakeup_count";
 static constexpr char kSysPowerState[] = "/sys/power/state";
+static constexpr char kSysKernelWakeupReasons[] = "/sys/kernel/wakeup_reasons/last_resume_reason";
 
 int main() {
     unique_fd wakeupCountFd{TEMP_FAILURE_RETRY(open(kSysPowerWakeupCount, O_CLOEXEC | O_RDWR))};
@@ -65,6 +66,11 @@ int main() {
         TEMP_FAILURE_RETRY(open(kSysPowerSuspendStats, O_DIRECTORY | O_CLOEXEC | O_RDONLY))};
     if (suspendStatsFd < 0) {
         PLOG(ERROR) << "SystemSuspend: Error opening " << kSysPowerSuspendStats;
+    }
+    unique_fd wakeupReasonsFd{
+        TEMP_FAILURE_RETRY(open(kSysKernelWakeupReasons, O_CLOEXEC | O_RDONLY))};
+    if (wakeupReasonsFd < 0) {
+        PLOG(ERROR) << "SystemSuspend: Error opening " << kSysKernelWakeupReasons;
     }
 
     // If either /sys/power/wakeup_count or /sys/power/state fail to open, we construct
@@ -90,10 +96,10 @@ int main() {
     sp<android::ProcessState> ps{android::ProcessState::self()};
     ps->startThreadPool();
 
-    sp<SystemSuspend> suspend =
-        new SystemSuspend(std::move(wakeupCountFd), std::move(stateFd), std::move(suspendStatsFd),
-                          kNativeWakeLockStatsCapacity, std::move(kernelWakelockStatsFd),
-                          100ms /* baseSleepTime */, suspendControl, true /* mUseSuspendCounter*/);
+    sp<SystemSuspend> suspend = new SystemSuspend(
+        std::move(wakeupCountFd), std::move(stateFd), std::move(suspendStatsFd),
+        kNativeWakeLockStatsCapacity, std::move(kernelWakelockStatsFd), std::move(wakeupReasonsFd),
+        100ms /* baseSleepTime */, suspendControl, true /* mUseSuspendCounter*/);
     status_t status = suspend->registerAsService();
     if (android::OK != status) {
         LOG(FATAL) << "Unable to register system-suspend service: " << status;
