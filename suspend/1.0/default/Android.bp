@@ -47,8 +47,9 @@ cc_binary {
     init_rc: ["android.system.suspend@1.0-service.rc"],
     vintf_fragments: ["android.system.suspend@1.0-service.xml"],
     shared_libs: [
+        "android.system.suspend.control-cpp",
+        "android.system.suspend.control.internal-cpp",
         "android.system.suspend@1.0",
-        "suspend_control_aidl_interface-cpp",
     ],
     srcs: [
         "main.cpp",
@@ -67,8 +68,9 @@ cc_test {
         "system_suspend_stats_defaults",
     ],
     static_libs: [
+        "android.system.suspend.control-cpp",
+        "android.system.suspend.control.internal-cpp",
         "android.system.suspend@1.0",
-        "suspend_control_aidl_interface-cpp",
         "libgmock",
     ],
     srcs: [
@@ -87,8 +89,9 @@ cc_benchmark {
         "system_suspend_defaults",
     ],
     shared_libs: [
+        "android.system.suspend.control-cpp",
+        "android.system.suspend.control.internal-cpp",
         "android.system.suspend@1.0",
-        "suspend_control_aidl_interface-cpp",
     ],
     srcs: [
         "SystemSuspendBenchmark.cpp",
