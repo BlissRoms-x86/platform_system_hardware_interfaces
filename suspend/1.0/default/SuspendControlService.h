@@ -44,7 +44,7 @@ class SuspendControlService : public BnSuspendControlService,
     void binderDied(const wp<IBinder>& who) override;
 
     void setSuspendService(const wp<SystemSuspend>& suspend);
-    void notifyWakeup(bool success);
+    void notifyWakeup(bool success, std::vector<std::string>& wakeupReasons);
     status_t dump(int fd, const Vector<String16>& args) override;
 
    private:
