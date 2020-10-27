@@ -94,10 +94,14 @@ class SystemSuspendTest : public ::testing::Test {
             sp<android::ProcessState> ps{android::ProcessState::self()};
             ps->startThreadPool();
 
+            wakeupReasonsFd =
+                unique_fd(TEMP_FAILURE_RETRY(open(wakeupReasonsFile.path, O_CLOEXEC | O_RDONLY)));
+
             sp<ISystemSuspend> suspend = new SystemSuspend(
                 std::move(wakeupCountFds[1]), std::move(stateFds[1]),
                 unique_fd(-1) /*suspendStatsFd*/, 1 /* maxNativeStatsEntries */,
-                unique_fd(-1) /* kernelWakelockStatsFd */, 0ms /* baseSleepTime */, suspendControl);
+                unique_fd(-1) /* kernelWakelockStatsFd */, std::move(wakeupReasonsFd),
+                0ms /* baseSleepTime */, suspendControl);
             status_t status = suspend->registerAsService(kServiceName);
             if (android::OK != status) {
                 LOG(FATAL) << "Unable to register service: " << status;
@@ -186,15 +190,19 @@ class SystemSuspendTest : public ::testing::Test {
     sp<ISuspendControlService> controlService;
     static unique_fd wakeupCountFds[2];
     static unique_fd stateFds[2];
+    static unique_fd wakeupReasonsFd;
     static int wakeupCountFd;
     static int stateFd;
+    static TemporaryFile wakeupReasonsFile;
 };
 
 // SystemSuspendTest test suite resources
 unique_fd SystemSuspendTest::wakeupCountFds[2];
 unique_fd SystemSuspendTest::stateFds[2];
+unique_fd SystemSuspendTest::wakeupReasonsFd;
 int SystemSuspendTest::wakeupCountFd;
 int SystemSuspendTest::stateFd;
+TemporaryFile SystemSuspendTest::wakeupReasonsFile;
 
 // Tests that autosuspend thread can only be enabled once.
 TEST_F(SystemSuspendTest, OnlyOneEnableAutosuspend) {
@@ -301,14 +309,22 @@ TEST_F(SystemSuspendTest, WakeLockStressTest) {
 // MockCallbackImpl can be destroyed independently of its wrapper MockCallback which is passed to
 // SystemSuspend.
 struct MockCallbackImpl {
-    MOCK_METHOD1(notifyWakeup, binder::Status(bool));
+    binder::Status notifyWakeup([[maybe_unused]] bool success,
+                                const std::vector<std::string>& wakeupReasons) {
+        mWakeupReasons = wakeupReasons;
+        mNumWakeups++;
+        return binder::Status::ok();
+    }
+
+    std::vector<std::string> mWakeupReasons;
+    int mNumWakeups = 0;
 };
 
 class MockCallback : public BnSuspendCallback {
    public:
     MockCallback(MockCallbackImpl* impl) : mImpl(impl), mDisabled(false) {}
-    binder::Status notifyWakeup(bool x) {
-        return mDisabled ? binder::Status::ok() : mImpl->notifyWakeup(x);
+    binder::Status notifyWakeup(bool x, const std::vector<std::string>& wakeupReasons) {
+        return mDisabled ? binder::Status::ok() : mImpl->notifyWakeup(x, wakeupReasons);
     }
     // In case we pull the rug from under MockCallback, but SystemSuspend still has an sp<> to the
     // object.
@@ -330,15 +346,70 @@ TEST_F(SystemSuspendTest, RegisterInvalidCallback) {
 TEST_F(SystemSuspendTest, CallbackNotifyWakeup) {
     constexpr int numWakeups = 5;
     MockCallbackImpl impl;
-    // SystemSuspend should suspend numWakeup + 1 times. However, it might
-    // only be able to notify numWakeup times. The test case might have
-    // finished by the time last notification completes.
-    EXPECT_CALL(impl, notifyWakeup).Times(testing::AtLeast(numWakeups));
     sp<MockCallback> cb = new MockCallback(&impl);
     bool retval = false;
     controlService->registerCallback(cb, &retval);
     ASSERT_TRUE(retval);
     checkLoop(numWakeups + 1);
+    cb->disable();
+    // SystemSuspend should suspend numWakeup + 1 times. However, it might
+    // only be able to notify numWakeup times. The test case might have
+    // finished by the time last notification completes.
+    ASSERT_GE(impl.mNumWakeups, numWakeups);
+}
+
+// Tests that SystemSuspend HAL correctly notifies wakeup subscribers with wakeup reasons.
+TEST_F(SystemSuspendTest, CallbackNotifyWakeupReason) {
+    const std::string wakeupReason0 = "";
+    const std::string wakeupReason1 = "100 :android,wakeup-reason-1";
+    const std::string wakeupReason2 = "Abort: android,wakeup-reason-2\n";
+    const std::string wakeupReason3 =
+        "999 :android,wakeup-reason-3\nAbort: android,wakeup-reason-3\n";
+    const std::string referenceWakeupReason0 = "unknown";
+    const std::string referenceWakeupReason1 = "100 :android,wakeup-reason-1";
+    const std::string referenceWakeupReason2 = "Abort: android,wakeup-reason-2";
+    const std::vector<std::string> referenceWakeupReason3 = {"999 :android,wakeup-reason-3",
+                                                             "Abort: android,wakeup-reason-3"};
+
+    unique_fd wakeupReasonsWriteFd = unique_fd(
+        TEMP_FAILURE_RETRY(open(SystemSuspendTest::wakeupReasonsFile.path, O_CLOEXEC | O_WRONLY)));
+
+    MockCallbackImpl impl;
+    sp<MockCallback> cb = new MockCallback(&impl);
+
+    bool retval = false;
+    controlService->registerCallback(cb, &retval);
+    ASSERT_TRUE(retval);
+
+    // wakeupReason0 empty wakeup reason
+    // Following assert check may happen before a callback been executed, iterate few checkLoop to
+    // make sure at least one callback been finished.
+    checkLoop(3);
+    ASSERT_EQ(impl.mWakeupReasons.size(), 1);
+    ASSERT_EQ(impl.mWakeupReasons[0], referenceWakeupReason0);
+
+    // wakeupReason1 single wakeup reason
+    ASSERT_TRUE(WriteStringToFd(wakeupReason1, wakeupReasonsWriteFd));
+    checkLoop(3);
+    ASSERT_EQ(impl.mWakeupReasons.size(), 1);
+    ASSERT_EQ(impl.mWakeupReasons[0], referenceWakeupReason1);
+
+    // wakeupReason2 single wakeup reason
+    lseek(wakeupReasonsWriteFd, 0, SEEK_SET);
+    ASSERT_TRUE(WriteStringToFd(wakeupReason2, wakeupReasonsWriteFd));
+    checkLoop(3);
+    ASSERT_EQ(impl.mWakeupReasons.size(), 1);
+    ASSERT_EQ(impl.mWakeupReasons[0], referenceWakeupReason2);
+
+    // wakeupReason3 two wakeup reasons
+    lseek(wakeupReasonsWriteFd, 0, SEEK_SET);
+    WriteStringToFd(wakeupReason3, wakeupReasonsWriteFd);
+    checkLoop(3);
+    ASSERT_EQ(impl.mWakeupReasons.size(), 2);
+    int i = 0;
+    for (auto wakeupReason : impl.mWakeupReasons) {
+        ASSERT_EQ(wakeupReason, referenceWakeupReason3[i++]);
+    }
     cb->disable();
 }
 
@@ -363,7 +434,8 @@ TEST_F(SystemSuspendTest, DeadCallback) {
 class CbRegisteringCb : public BnSuspendCallback {
    public:
     CbRegisteringCb(sp<ISuspendControlService> controlService) : mControlService(controlService) {}
-    binder::Status notifyWakeup([[maybe_unused]] bool x) {
+    binder::Status notifyWakeup([[maybe_unused]] bool x,
+                                [[maybe_unused]] const std::vector<std::string>& wakeupReasons) {
         sp<MockCallback> cb = new MockCallback(nullptr);
         cb->disable();
         bool retval = false;
@@ -579,7 +651,8 @@ class SystemSuspendSameThreadTest : public ::testing::Test {
         suspendService = new SystemSuspend(
             unique_fd(-1) /* wakeupCountFd */, unique_fd(-1) /* stateFd */,
             unique_fd(dup(suspendStatsFd)), 1 /* maxNativeStatsEntries */,
-            unique_fd(dup(kernelWakelockStatsFd.get())), 0ms /* baseSleepTime */, suspendControl);
+            unique_fd(dup(kernelWakelockStatsFd.get())), unique_fd(-1) /* wakeupReasonsFd */,
+            0ms /* baseSleepTime */, suspendControl);
     }
 
     virtual void TearDown() override {
