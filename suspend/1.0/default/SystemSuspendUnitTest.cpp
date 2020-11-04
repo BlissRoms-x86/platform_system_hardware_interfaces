@@ -360,15 +360,20 @@ TEST_F(SystemSuspendTest, CallbackNotifyWakeup) {
 
 // Tests that SystemSuspend HAL correctly notifies wakeup subscribers with wakeup reasons.
 TEST_F(SystemSuspendTest, CallbackNotifyWakeupReason) {
+    int i;
     const std::string wakeupReason0 = "";
-    const std::string wakeupReason1 = "100 :android,wakeup-reason-1";
-    const std::string wakeupReason2 = "Abort: android,wakeup-reason-2\n";
-    const std::string wakeupReason3 =
-        "999 :android,wakeup-reason-3\nAbort: android,wakeup-reason-3\n";
-    const std::string referenceWakeupReason0 = "unknown";
-    const std::string referenceWakeupReason1 = "100 :android,wakeup-reason-1";
-    const std::string referenceWakeupReason2 = "Abort: android,wakeup-reason-2";
-    const std::vector<std::string> referenceWakeupReason3 = {"999 :android,wakeup-reason-3",
+    const std::string wakeupReason1 = " ";
+    const std::string wakeupReason2 = "\n\n";
+    const std::string wakeupReason3 = "100 :android,wakeup-reason-1";
+    const std::string wakeupReason4 = "Abort: android,wakeup-reason-2\n";
+    const std::string wakeupReason5 =
+        "999 :android,wakeup-reason-3\nAbort: android,wakeup-reason-3";
+    const std::string referenceWakeupReason0 = "";
+    const std::string referenceWakeupReason1 = " ";
+    const std::vector<std::string> referenceWakeupReason2 = {"", "", ""};
+    const std::string referenceWakeupReason3 = "100 :android,wakeup-reason-1";
+    const std::vector<std::string> referenceWakeupReason4 = {"Abort: android,wakeup-reason-2", ""};
+    const std::vector<std::string> referenceWakeupReason5 = {"999 :android,wakeup-reason-3",
                                                              "Abort: android,wakeup-reason-3"};
 
     unique_fd wakeupReasonsWriteFd = unique_fd(
@@ -388,27 +393,47 @@ TEST_F(SystemSuspendTest, CallbackNotifyWakeupReason) {
     ASSERT_EQ(impl.mWakeupReasons.size(), 1);
     ASSERT_EQ(impl.mWakeupReasons[0], referenceWakeupReason0);
 
-    // wakeupReason1 single wakeup reason
+    // wakeupReason1 single invalid wakeup reason with only space.
     ASSERT_TRUE(WriteStringToFd(wakeupReason1, wakeupReasonsWriteFd));
     checkLoop(3);
     ASSERT_EQ(impl.mWakeupReasons.size(), 1);
     ASSERT_EQ(impl.mWakeupReasons[0], referenceWakeupReason1);
 
-    // wakeupReason2 single wakeup reason
+    // wakeupReason2 two empty wakeup reasons.
     lseek(wakeupReasonsWriteFd, 0, SEEK_SET);
     ASSERT_TRUE(WriteStringToFd(wakeupReason2, wakeupReasonsWriteFd));
     checkLoop(3);
-    ASSERT_EQ(impl.mWakeupReasons.size(), 1);
-    ASSERT_EQ(impl.mWakeupReasons[0], referenceWakeupReason2);
+    ASSERT_EQ(impl.mWakeupReasons.size(), 3);
+    i = 0;
+    for (auto wakeupReason : impl.mWakeupReasons) {
+        ASSERT_EQ(wakeupReason, referenceWakeupReason2[i++]);
+    }
 
-    // wakeupReason3 two wakeup reasons
+    // wakeupReason3 single wakeup reasons.
     lseek(wakeupReasonsWriteFd, 0, SEEK_SET);
-    WriteStringToFd(wakeupReason3, wakeupReasonsWriteFd);
+    ASSERT_TRUE(WriteStringToFd(wakeupReason3, wakeupReasonsWriteFd));
+    checkLoop(3);
+    ASSERT_EQ(impl.mWakeupReasons.size(), 1);
+    ASSERT_EQ(impl.mWakeupReasons[0], referenceWakeupReason3);
+
+    // wakeupReason4 two wakeup reasons with one empty.
+    lseek(wakeupReasonsWriteFd, 0, SEEK_SET);
+    ASSERT_TRUE(WriteStringToFd(wakeupReason4, wakeupReasonsWriteFd));
     checkLoop(3);
     ASSERT_EQ(impl.mWakeupReasons.size(), 2);
-    int i = 0;
+    i = 0;
     for (auto wakeupReason : impl.mWakeupReasons) {
-        ASSERT_EQ(wakeupReason, referenceWakeupReason3[i++]);
+        ASSERT_EQ(wakeupReason, referenceWakeupReason4[i++]);
+    }
+
+    // wakeupReason5 two wakeup reasons.
+    lseek(wakeupReasonsWriteFd, 0, SEEK_SET);
+    ASSERT_TRUE(WriteStringToFd(wakeupReason5, wakeupReasonsWriteFd));
+    checkLoop(3);
+    ASSERT_EQ(impl.mWakeupReasons.size(), 2);
+    i = 0;
+    for (auto wakeupReason : impl.mWakeupReasons) {
+        ASSERT_EQ(wakeupReason, referenceWakeupReason5[i++]);
     }
     cb->disable();
 }
