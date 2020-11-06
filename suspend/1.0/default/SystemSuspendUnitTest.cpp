@@ -55,12 +55,14 @@ using android::hardware::Void;
 using android::system::suspend::BnSuspendCallback;
 using android::system::suspend::BnWakelockCallback;
 using android::system::suspend::ISuspendControlService;
-using android::system::suspend::WakeLockInfo;
+using android::system::suspend::internal::ISuspendControlServiceInternal;
+using android::system::suspend::internal::WakeLockInfo;
 using android::system::suspend::V1_0::getTimeNow;
 using android::system::suspend::V1_0::ISystemSuspend;
 using android::system::suspend::V1_0::IWakeLock;
 using android::system::suspend::V1_0::readFd;
 using android::system::suspend::V1_0::SuspendControlService;
+using android::system::suspend::V1_0::SuspendControlServiceInternal;
 using android::system::suspend::V1_0::SuspendStats;
 using android::system::suspend::V1_0::SystemSuspend;
 using android::system::suspend::V1_0::TimestampType;
@@ -71,6 +73,7 @@ namespace android {
 
 static constexpr char kServiceName[] = "TestService";
 static constexpr char kControlServiceName[] = "TestControlService";
+static constexpr char kControlServiceInternalName[] = "TestControlServiceInternal";
 
 static bool isReadBlocked(int fd, int timeout_ms = 20) {
     struct pollfd pfd {
@@ -92,6 +95,15 @@ class SystemSuspendTest : public ::testing::Test {
                 LOG(FATAL) << "Unable to register service " << kControlServiceName << controlStatus;
             }
 
+            sp<SuspendControlServiceInternal> suspendControlInternal =
+                new SuspendControlServiceInternal();
+            controlStatus = ::android::defaultServiceManager()->addService(
+                android::String16(kControlServiceInternalName), suspendControlInternal);
+            if (android::OK != controlStatus) {
+                LOG(FATAL) << "Unable to register service " << kControlServiceInternalName
+                           << controlStatus;
+            }
+
             // Create non-HW binder threadpool for SuspendControlService.
             sp<android::ProcessState> ps{android::ProcessState::self()};
             ps->startThreadPool();
@@ -103,7 +115,7 @@ class SystemSuspendTest : public ::testing::Test {
                 std::move(wakeupCountFds[1]), std::move(stateFds[1]),
                 unique_fd(-1) /*suspendStatsFd*/, 1 /* maxNativeStatsEntries */,
                 unique_fd(-1) /* kernelWakelockStatsFd */, std::move(wakeupReasonsFd),
-                0ms /* baseSleepTime */, suspendControl);
+                0ms /* baseSleepTime */, suspendControl, suspendControlInternal);
             status_t status = suspend->registerAsService(kServiceName);
             if (android::OK != status) {
                 LOG(FATAL) << "Unable to register service: " << status;
@@ -128,9 +140,15 @@ class SystemSuspendTest : public ::testing::Test {
         ASSERT_NE(control, nullptr) << "failed to get the suspend control service";
         sp<ISuspendControlService> controlService = interface_cast<ISuspendControlService>(control);
 
+        sp<IBinder> controlInternal = android::defaultServiceManager()->getService(
+            android::String16(kControlServiceInternalName));
+        ASSERT_NE(controlInternal, nullptr) << "failed to get the suspend control internal service";
+        sp<ISuspendControlServiceInternal> controlServiceInternal =
+            interface_cast<ISuspendControlServiceInternal>(controlInternal);
+
         // Start auto-suspend.
         bool enabled = false;
-        controlService->enableAutosuspend(&enabled);
+        controlServiceInternal->enableAutosuspend(&enabled);
         ASSERT_EQ(enabled, true) << "failed to start autosuspend";
     }
 
@@ -144,6 +162,11 @@ class SystemSuspendTest : public ::testing::Test {
             android::defaultServiceManager()->getService(android::String16(kControlServiceName));
         ASSERT_NE(control, nullptr) << "failed to get the suspend control service";
         controlService = interface_cast<ISuspendControlService>(control);
+
+        sp<IBinder> controlInternal = android::defaultServiceManager()->getService(
+            android::String16(kControlServiceInternalName));
+        ASSERT_NE(controlInternal, nullptr) << "failed to get the suspend control internal service";
+        controlServiceInternal = interface_cast<ISuspendControlServiceInternal>(control);
 
         wakeupCountFd = wakeupCountFds[0];
         stateFd = stateFds[0];
@@ -173,7 +196,7 @@ class SystemSuspendTest : public ::testing::Test {
 
     size_t getActiveWakeLockCount() {
         std::vector<WakeLockInfo> wlStats;
-        controlService->getWakeLockStats(&wlStats);
+        controlServiceInternal->getWakeLockStats(&wlStats);
         return count_if(wlStats.begin(), wlStats.end(), [](auto entry) { return entry.isActive; });
     }
 
@@ -198,6 +221,7 @@ class SystemSuspendTest : public ::testing::Test {
 
     sp<ISystemSuspend> suspendService;
     sp<ISuspendControlService> controlService;
+    sp<ISuspendControlServiceInternal> controlServiceInternal;
     static unique_fd wakeupCountFds[2];
     static unique_fd stateFds[2];
     static unique_fd wakeupReasonsFd;
@@ -217,7 +241,7 @@ TemporaryFile SystemSuspendTest::wakeupReasonsFile;
 // Tests that autosuspend thread can only be enabled once.
 TEST_F(SystemSuspendTest, OnlyOneEnableAutosuspend) {
     bool enabled = false;
-    controlService->enableAutosuspend(&enabled);
+    controlServiceInternal->enableAutosuspend(&enabled);
     ASSERT_EQ(enabled, false);
 }
 
@@ -781,7 +805,7 @@ class SystemSuspendSameThreadTest : public ::testing::Test {
      */
     std::vector<WakeLockInfo> getWakelockStats() {
         std::vector<WakeLockInfo> wlStats;
-        controlService->getWakeLockStats(&wlStats);
+        controlServiceInternal->getWakeLockStats(&wlStats);
         return wlStats;
     }
 
@@ -807,12 +831,15 @@ class SystemSuspendSameThreadTest : public ::testing::Test {
 
         // Set up same thread suspend services
         sp<SuspendControlService> suspendControl = new SuspendControlService();
+        sp<SuspendControlServiceInternal> suspendControlInternal =
+            new SuspendControlServiceInternal();
         controlService = suspendControl;
+        controlServiceInternal = suspendControlInternal;
         suspendService = new SystemSuspend(
             unique_fd(-1) /* wakeupCountFd */, unique_fd(-1) /* stateFd */,
             unique_fd(dup(suspendStatsFd)), 1 /* maxNativeStatsEntries */,
             unique_fd(dup(kernelWakelockStatsFd.get())), unique_fd(-1) /* wakeupReasonsFd */,
-            0ms /* baseSleepTime */, suspendControl);
+            0ms /* baseSleepTime */, suspendControl, suspendControlInternal);
     }
 
     virtual void TearDown() override {
@@ -822,6 +849,7 @@ class SystemSuspendSameThreadTest : public ::testing::Test {
 
     sp<ISystemSuspend> suspendService;
     sp<ISuspendControlService> controlService;
+    sp<ISuspendControlServiceInternal> controlServiceInternal;
     unique_fd kernelWakelockStatsFd;
     unique_fd suspendStatsFd;
     TemporaryDir kernelWakelockStatsDir;
