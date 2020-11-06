@@ -16,6 +16,7 @@
 
 package android.system.suspend;
 
+import android.system.suspend.IWakelockCallback;
 import android.system.suspend.ISuspendCallback;
 import android.system.suspend.WakeLockInfo;
 
@@ -24,10 +25,9 @@ import android.system.suspend.WakeLockInfo;
  * monitor native wakelocks.
  * @hide
  */
-interface ISuspendControlService
-{
+interface ISuspendControlService {
     /**
-     * Starts automatic system suspendion.
+     * Starts automatic system suspension.
      *
      * @return true on success, false otherwise.
      */
@@ -41,6 +41,15 @@ interface ISuspendControlService
      * @return true on success, false otherwise.
      */
     boolean registerCallback(ISuspendCallback callback);
+
+    /**
+     * Registers a callback for a wakelock specified by its name.
+     *
+     * @param callback the callback to register.
+     * @param name the name of the wakelock.
+     * @return true on success, false otherwise.
+     */
+    boolean registerWakelockCallback(IWakelockCallback callback, @utf8InCpp String name);
 
     /**
      * Suspends the system even if there are wakelocks being held.
