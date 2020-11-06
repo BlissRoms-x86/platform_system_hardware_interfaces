@@ -38,6 +38,7 @@ using android::hardware::configureRpcThreadpool;
 using android::hardware::joinRpcThreadpool;
 using android::system::suspend::V1_0::ISystemSuspend;
 using android::system::suspend::V1_0::SuspendControlService;
+using android::system::suspend::V1_0::SuspendControlServiceInternal;
 using android::system::suspend::V1_0::SystemSuspend;
 using namespace std::chrono_literals;
 
@@ -92,14 +93,22 @@ int main() {
         LOG(FATAL) << "Unable to register suspend_control service: " << controlStatus;
     }
 
+    sp<SuspendControlServiceInternal> suspendControlInternal = new SuspendControlServiceInternal();
+    controlStatus = android::defaultServiceManager()->addService(
+        android::String16("suspend_control_internal"), suspendControlInternal);
+    if (controlStatus != android::OK) {
+        LOG(FATAL) << "Unable to register suspend_control_internal service: " << controlStatus;
+    }
+
     // Create non-HW binder threadpool for SuspendControlService.
     sp<android::ProcessState> ps{android::ProcessState::self()};
     ps->startThreadPool();
 
-    sp<SystemSuspend> suspend = new SystemSuspend(
-        std::move(wakeupCountFd), std::move(stateFd), std::move(suspendStatsFd),
-        kNativeWakeLockStatsCapacity, std::move(kernelWakelockStatsFd), std::move(wakeupReasonsFd),
-        100ms /* baseSleepTime */, suspendControl, true /* mUseSuspendCounter*/);
+    sp<SystemSuspend> suspend =
+        new SystemSuspend(std::move(wakeupCountFd), std::move(stateFd), std::move(suspendStatsFd),
+                          kNativeWakeLockStatsCapacity, std::move(kernelWakelockStatsFd),
+                          std::move(wakeupReasonsFd), 100ms /* baseSleepTime */, suspendControl,
+                          suspendControlInternal, true /* mUseSuspendCounter*/);
     status_t status = suspend->registerAsService();
     if (android::OK != status) {
         LOG(FATAL) << "Unable to register system-suspend service: " << status;
