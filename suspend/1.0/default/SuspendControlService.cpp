@@ -40,15 +40,6 @@ binder::Status retOk(const T& value, T* ret_val) {
     return binder::Status::ok();
 }
 
-void SuspendControlService::setSuspendService(const wp<SystemSuspend>& suspend) {
-    mSuspend = suspend;
-}
-
-binder::Status SuspendControlService::enableAutosuspend(bool* _aidl_return) {
-    const auto suspendService = mSuspend.promote();
-    return retOk(suspendService != nullptr && suspendService->enableAutosuspend(), _aidl_return);
-}
-
 binder::Status SuspendControlService::registerCallback(const sp<ISuspendCallback>& callback,
                                                        bool* _aidl_return) {
     if (!callback) {
@@ -92,11 +83,6 @@ binder::Status SuspendControlService::registerWakelockCallback(
     mWakelockCallbacks[name].push_back(callback);
 
     return retOk(true, _aidl_return);
-}
-
-binder::Status SuspendControlService::forceSuspend(bool* _aidl_return) {
-    const auto suspendService = mSuspend.promote();
-    return retOk(suspendService != nullptr && suspendService->forceSuspend(), _aidl_return);
 }
 
 void SuspendControlService::binderDied(const wp<IBinder>& who) {
@@ -158,7 +144,22 @@ void SuspendControlService::notifyWakeup(bool success, std::vector<std::string>&
     }
 }
 
-binder::Status SuspendControlService::getWakeLockStats(std::vector<WakeLockInfo>* _aidl_return) {
+void SuspendControlServiceInternal::setSuspendService(const wp<SystemSuspend>& suspend) {
+    mSuspend = suspend;
+}
+
+binder::Status SuspendControlServiceInternal::enableAutosuspend(bool* _aidl_return) {
+    const auto suspendService = mSuspend.promote();
+    return retOk(suspendService != nullptr && suspendService->enableAutosuspend(), _aidl_return);
+}
+
+binder::Status SuspendControlServiceInternal::forceSuspend(bool* _aidl_return) {
+    const auto suspendService = mSuspend.promote();
+    return retOk(suspendService != nullptr && suspendService->forceSuspend(), _aidl_return);
+}
+
+binder::Status SuspendControlServiceInternal::getWakeLockStats(
+    std::vector<WakeLockInfo>* _aidl_return) {
     const auto suspendService = mSuspend.promote();
     if (!suspendService) {
         return binder::Status::fromExceptionCode(binder::Status::Exception::EX_NULL_POINTER,
@@ -181,7 +182,7 @@ static std::string dumpUsage() {
            "         invalid) option is specified.\n\n";
 }
 
-status_t SuspendControlService::dump(int fd, const Vector<String16>& args) {
+status_t SuspendControlServiceInternal::dump(int fd, const Vector<String16>& args) {
     register_sig_handler();
 
     const auto suspendService = mSuspend.promote();
