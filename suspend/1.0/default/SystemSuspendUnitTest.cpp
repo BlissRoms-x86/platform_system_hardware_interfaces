@@ -19,6 +19,7 @@
 #include <android-base/result.h>
 #include <android-base/unique_fd.h>
 #include <android/system/suspend/BnSuspendCallback.h>
+#include <android/system/suspend/BnWakelockCallback.h>
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
 #include <binder/ProcessState.h>
@@ -52,6 +53,7 @@ using android::hardware::joinRpcThreadpool;
 using android::hardware::Return;
 using android::hardware::Void;
 using android::system::suspend::BnSuspendCallback;
+using android::system::suspend::BnWakelockCallback;
 using android::system::suspend::ISuspendControlService;
 using android::system::suspend::WakeLockInfo;
 using android::system::suspend::V1_0::getTimeNow;
@@ -186,6 +188,14 @@ class SystemSuspendTest : public ::testing::Test {
                 << "SystemSuspend failed to write correct sleep state.";
         }
     }
+
+    void checkWakelockLoop(int numIter, const std::string name) {
+        for (int i = 0; i < numIter; i++) {
+            sp<IWakeLock> testLock = acquireWakeLock(name);
+            testLock->release();
+        }
+    }
+
     sp<ISystemSuspend> suspendService;
     sp<ISuspendControlService> controlService;
     static unique_fd wakeupCountFds[2];
@@ -454,6 +464,156 @@ TEST_F(SystemSuspendTest, CallbackRegisterCallbackNoDeadlock) {
     controlService->registerCallback(cb, &retval);
     ASSERT_TRUE(retval);
     checkLoop(3);
+}
+
+struct MockWakelockCallbackImpl {
+    MOCK_METHOD0(notifyAcquired, binder::Status());
+    MOCK_METHOD0(notifyReleased, binder::Status());
+};
+
+class MockWakelockCallback : public BnWakelockCallback {
+   public:
+    MockWakelockCallback(MockWakelockCallbackImpl* impl) : mImpl(impl), mDisabled(false) {}
+    binder::Status notifyAcquired(void) {
+        return mDisabled ? binder::Status::ok() : mImpl->notifyAcquired();
+    }
+    binder::Status notifyReleased(void) {
+        return mDisabled ? binder::Status::ok() : mImpl->notifyReleased();
+    }
+    // In case we pull the rug from under MockWakelockCallback, but SystemSuspend still has an sp<>
+    // to the object.
+    void disable() { mDisabled = true; }
+
+   private:
+    MockWakelockCallbackImpl* mImpl;
+    bool mDisabled;
+};
+
+// Tests that nullptr can't be registered as wakelock callbacks.
+TEST_F(SystemSuspendTest, RegisterInvalidWakelockCallback) {
+    bool retval = false;
+    controlService->registerWakelockCallback(nullptr, "testLock", &retval);
+    ASSERT_FALSE(retval);
+}
+
+// Tests that the a callback cannot be registeed with a wakelock twice.
+TEST_F(SystemSuspendTest, RegisterCallbackTwice) {
+    bool retval = false;
+    MockWakelockCallbackImpl impl;
+    sp<MockWakelockCallback> cb = new MockWakelockCallback(&impl);
+
+    controlService->registerWakelockCallback(cb, "testLock", &retval);
+    ASSERT_TRUE(retval);
+    controlService->registerWakelockCallback(cb, "testLock", &retval);
+    ASSERT_FALSE(retval);
+
+    cb->disable();
+}
+
+// Tests that the same callback can be registered with two wakelocks.
+TEST_F(SystemSuspendTest, RegisterSameCallbackForTwoWakelocks) {
+    bool retval = false;
+    MockWakelockCallbackImpl impl;
+    sp<MockWakelockCallback> cb = new MockWakelockCallback(&impl);
+
+    controlService->registerWakelockCallback(cb, "testLock1", &retval);
+    ASSERT_TRUE(retval);
+    controlService->registerWakelockCallback(cb, "testLock2", &retval);
+    ASSERT_TRUE(retval);
+
+    cb->disable();
+}
+
+// Tests that the two callbacks can be registered with the same wakelock.
+TEST_F(SystemSuspendTest, RegisterTwoCallbacksForSameWakelock) {
+    bool retval = false;
+    MockWakelockCallbackImpl impl;
+    sp<MockWakelockCallback> cb1 = new MockWakelockCallback(&impl);
+    sp<MockWakelockCallback> cb2 = new MockWakelockCallback(&impl);
+
+    controlService->registerWakelockCallback(cb1, "testLock", &retval);
+    ASSERT_TRUE(retval);
+    controlService->registerWakelockCallback(cb2, "testLock", &retval);
+    ASSERT_TRUE(retval);
+
+    cb1->disable();
+    cb2->disable();
+}
+
+// Tests that SystemSuspend HAL correctly deals with a dead wakelock callback.
+TEST_F(SystemSuspendTest, DeadWakelockCallback) {
+    ASSERT_EXIT(
+        {
+            sp<MockWakelockCallback> cb = new MockWakelockCallback(nullptr);
+            bool retval = false;
+            controlService->registerWakelockCallback(cb, "testLock", &retval);
+            ASSERT_TRUE(retval);
+            std::exit(0);
+        },
+        ::testing::ExitedWithCode(0), "");
+
+    // Dead process callback must still be dealt with either by unregistering it
+    // or checking isOk() on every call.
+    sp<IWakeLock> testLock = acquireWakeLock("testLock");
+    ASSERT_TRUE(testLock->release().isOk());
+}
+
+// Wakelock callback that registers another callback.
+class WakelockCbRegisteringCb : public BnWakelockCallback {
+   public:
+    WakelockCbRegisteringCb(sp<ISuspendControlService> controlService)
+        : mControlService(controlService) {}
+    binder::Status notifyAcquired(void) {
+        sp<MockWakelockCallback> cb = new MockWakelockCallback(nullptr);
+        cb->disable();
+        bool retval = false;
+        mControlService->registerWakelockCallback(cb, "testLock", &retval);
+        return binder::Status::ok();
+    }
+    binder::Status notifyReleased(void) {
+        sp<MockWakelockCallback> cb = new MockWakelockCallback(nullptr);
+        cb->disable();
+        bool retval = false;
+        mControlService->registerWakelockCallback(cb, "testLock", &retval);
+        return binder::Status::ok();
+    }
+
+   private:
+    sp<ISuspendControlService> mControlService;
+};
+
+TEST_F(SystemSuspendTest, WakelockCallbackRegisterCallbackNoDeadlock) {
+    sp<WakelockCbRegisteringCb> cb = new WakelockCbRegisteringCb(controlService);
+    bool retval = false;
+    controlService->registerWakelockCallback(cb, "testLock", &retval);
+    ASSERT_TRUE(retval);
+
+    checkWakelockLoop(3, "testLock");
+}
+
+// Tests that SystemSuspend HAL correctly notifies wakelock events.
+TEST_F(SystemSuspendTest, CallbackNotifyWakelock) {
+    bool retval = false;
+    MockWakelockCallbackImpl impl1;
+    MockWakelockCallbackImpl impl2;
+    sp<MockWakelockCallback> cb1 = new MockWakelockCallback(&impl1);
+    sp<MockWakelockCallback> cb2 = new MockWakelockCallback(&impl2);
+
+    controlService->registerWakelockCallback(cb1, "testLock1", &retval);
+    ASSERT_TRUE(retval);
+    controlService->registerWakelockCallback(cb2, "testLock2", &retval);
+    ASSERT_TRUE(retval);
+
+    EXPECT_CALL(impl1, notifyAcquired).Times(4);
+    EXPECT_CALL(impl1, notifyReleased).Times(4);
+    EXPECT_CALL(impl2, notifyAcquired).Times(3);
+    EXPECT_CALL(impl2, notifyReleased).Times(3);
+
+    checkWakelockLoop(4, "testLock1");
+    checkWakelockLoop(3, "testLock2");
+
+    cb1->disable();
+    cb2->disable();
 }
 
 class SystemSuspendSameThreadTest : public ::testing::Test {
