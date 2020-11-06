@@ -61,22 +61,21 @@ static inline int getCallingPid() {
 
 static std::vector<std::string> readWakeupReasons(int fd) {
     std::vector<std::string> wakeupReasons;
+    std::string reasonlines;
     std::string reasonline;
 
     lseek(fd, 0, SEEK_SET);
-    std::stringstream ss(readFd(fd));
-
-    while (ss.good()) {
-        getline(ss, reasonline, '\n');
-        if (!reasonline.empty()) {
-            wakeupReasons.push_back(reasonline);
-        }
-    }
-
-    if (wakeupReasons.empty()) {
+    if (!ReadFdToString(fd, &reasonlines)) {
         LOG(ERROR) << "failed to read wakeup reasons";
-        wakeupReasons.push_back("unknown");
+        return wakeupReasons;
     }
+
+    std::stringstream ss(reasonlines);
+    while (ss.good()) {
+        std::getline(ss, reasonline, '\n');
+        wakeupReasons.push_back(reasonline);
+    }
+
     return wakeupReasons;
 }
 
