@@ -16,12 +16,10 @@
 
 package android.system.keystore2;
 
-import android.system.keystore2.Certificate;
-import android.system.keystore2.CertificateChain;
 import android.system.keystore2.Domain;
 import android.system.keystore2.IKeystoreSecurityLevel;
 import android.system.keystore2.KeyDescriptor;
-import android.system.keystore2.KeyMetadata;
+import android.system.keystore2.KeyEntryResponse;
 import android.system.keystore2.SecurityLevel;
 
 /**
@@ -77,13 +75,11 @@ interface IKeystoreService {
      *                      key was generated with attestation or if the client
      *                      installed one using `updateSubcomponent`.
      *
-     * @return The security level interface is serviced by the Keystore instance
-     *                      that corresponds to the key's security level. It can be used to start
-     *                      operations, generate, and import keys.
+     * @return The `KeyEntryResponse includes the requested key's metadata and the security level
+     *                      interface corresponding to the key's security level, which can be used
+     *                      to start operations, generate, and import keys.
      */
-    IKeystoreSecurityLevel getKeyEntry(in KeyDescriptor key, out KeyMetadata metadata,
-                                       out @nullable Certificate publicCert,
-                                       out @nullable CertificateChain certificateChain);
+    KeyEntryResponse getKeyEntry(in KeyDescriptor key);
 
     /**
      * Allows setting the public key or certificate chain of an asymmetric key.
@@ -104,8 +100,8 @@ interface IKeystoreService {
      *
      * @param certificateChain An optional certificate chain for the given key.
      */
-    void updateSubcomponent(in KeyDescriptor key, in @nullable Certificate publicCert,
-                            in @nullable CertificateChain certificateChain);
+    void updateSubcomponent(in KeyDescriptor key, in @nullable byte[] publicCert,
+                            in @nullable byte[] certificateChain);
 
     /**
      * List all entries accessible by the caller in the given `domain` and `nspace`.
