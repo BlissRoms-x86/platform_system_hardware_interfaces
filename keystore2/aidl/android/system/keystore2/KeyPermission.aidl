@@ -84,4 +84,14 @@ enum KeyPermission {
      * Implementations must not allow this permission to be granted.
      */
     USE_DEV_ID = 0x200,
+    /**
+     * Allows the creation of auth bound keys that are not cryptographically bound to the LSKF.
+     * System components might need this if they required a logically authentication bound key
+     * that is used for the derivation of the LSKF bound key material. This is essentially breaking
+     * up a circular dependency.
+     * This permission is checked during key generation and import if the
+     * `KeyFlag.AUTH_BOUND_WITHOUT_CRYPTOGRAPHIC_LSKF_BINDING` was set. Because keys cannot
+     * be generated or imported via grant, it does not make sense to grant this key.
+     */
+    USE_NO_LSKF_BINDING = 0x400,
  }
