@@ -17,6 +17,7 @@
 package android.system.keystore2;
 
 import android.system.keystore2.Authorization;
+import android.system.keystore2.IKeystoreSecurityLevel;
 import android.system.keystore2.KeyDescriptor;
 import android.system.keystore2.SecurityLevel;
 
@@ -27,7 +28,35 @@ import android.system.keystore2.SecurityLevel;
  */
 @VintfStability
 parcelable KeyMetadata {
+    /**
+     * The KeyId based key descriptor. Using this key descriptor for subsequent
+     * operations ensures that the private key material used in those operations
+     * corresponds to the meta data in this structure. Alias based key descriptors
+     * may point to a different key if the alias was rebound in the meantime.
+     */
     KeyDescriptor key;
-    SecurityLevel securityLevel;
+    /**
+     * The security level that the key resides in.
+     * TODO, we could also take this from the origin tag in authorizations.
+     */
+    SecurityLevel keySecurityLevel;
+    /**
+     * The authorizations describing the key, e.g., the algorithm, key size,
+     * permissible purposes, digests and paddings, as well as usage restrictions,
+     * e.g., whether or not user authorization is required.
+     */
     Authorization[] authorizations;
+    /**
+     * The public certificate if the requested key is an asymmetric key.
+     */
+    @nullable byte[] certificate;
+    /**
+     * The certificate chain if the key has one, e.g., if the key was generated with
+     * attestation or if the client installed one using `updateSubcomponent`.
+     */
+    @nullable byte[] certificateChain;
+    /**
+     * The time of the last modification in milliseconds since January 1st 1970.
+     */
+    long modificationTimeMs;
 }
