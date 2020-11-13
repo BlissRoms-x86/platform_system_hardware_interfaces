@@ -17,6 +17,6 @@
 
 package android.system.keystore2;
 @VintfStability
-parcelable Certificate {
-  byte[] data;
+parcelable KeyParameters {
+  android.system.keystore2.KeyParameter[] keyParameter;
 }

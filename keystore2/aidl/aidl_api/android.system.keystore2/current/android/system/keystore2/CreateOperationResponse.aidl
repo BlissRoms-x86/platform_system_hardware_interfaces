@@ -17,6 +17,8 @@
 
 package android.system.keystore2;
 @VintfStability
-parcelable CertificateChain {
-  byte[] data;
+parcelable CreateOperationResponse {
+  android.system.keystore2.IKeystoreOperation iOperation;
+  @nullable android.system.keystore2.OperationChallenge operationChallenge;
+  @nullable android.system.keystore2.KeyParameters parameters;
 }
