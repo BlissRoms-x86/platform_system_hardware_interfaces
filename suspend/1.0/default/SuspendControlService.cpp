@@ -175,11 +175,25 @@ binder::Status SuspendControlServiceInternal::getWakeLockStats(
     return binder::Status::ok();
 }
 
+binder::Status SuspendControlServiceInternal::getWakeupStats(
+    std::vector<WakeupInfo>* _aidl_return) {
+    const auto suspendService = mSuspend.promote();
+    if (!suspendService) {
+        return binder::Status::fromExceptionCode(binder::Status::Exception::EX_NULL_POINTER,
+                                                 String8("Null reference to suspendService"));
+    }
+
+    suspendService->getWakeupList().getWakeupStats(_aidl_return);
+    return binder::Status::ok();
+}
+
 static std::string dumpUsage() {
-    return "\nUsage: adb shell dumpsys suspend_control [option]\n\n"
+    return "\nUsage: adb shell dumpsys suspend_control_internal [option]\n\n"
            "   Options:\n"
            "       --wakelocks      : returns wakelock stats.\n"
+           "       --wakeups        : returns wakeup stats.\n"
            "       --suspend_stats  : returns suspend stats.\n"
+           "       --all or -a      : returns all stats.\n"
            "       --help or -h     : prints this message.\n\n"
            "   Note: All stats are returned  if no or (an\n"
            "         invalid) option is specified.\n\n";
@@ -193,29 +207,52 @@ status_t SuspendControlServiceInternal::dump(int fd, const Vector<String16>& arg
         return DEAD_OBJECT;
     }
 
-    bool wakelocks = true;
-    bool suspend_stats = true;
+    enum : int32_t {
+        OPT_WAKELOCKS = 1 << 0,
+        OPT_WAKEUPS = 1 << 1,
+        OPT_SUSPEND_STATS = 1 << 2,
+        OPT_ALL = ~0,
+    };
+    int opts = 0;
 
-    if (args.size() > 0) {
-        std::string arg(String8(args[0]).string());
-        if (arg == "--wakelocks") {
-            suspend_stats = false;
-        } else if (arg == "--suspend_stats") {
-            wakelocks = false;
-        } else if (arg == "-h" || arg == "--help") {
-            std::string usage = dumpUsage();
-            dprintf(fd, "%s\n", usage.c_str());
-            return OK;
+    if (args.empty()) {
+        opts = OPT_ALL;
+    } else {
+        for (const auto& arg : args) {
+            if (arg == String16("--wakelocks")) {
+                opts |= OPT_WAKELOCKS;
+            } else if (arg == String16("--wakeups")) {
+                opts |= OPT_WAKEUPS;
+            } else if (arg == String16("--suspend_stats")) {
+                opts |= OPT_SUSPEND_STATS;
+            } else if (arg == String16("-a") || arg == String16("--all")) {
+                opts = OPT_ALL;
+            } else if (arg == String16("-h") || arg == String16("--help")) {
+                std::string usage = dumpUsage();
+                dprintf(fd, "%s\n", usage.c_str());
+                return OK;
+            }
         }
     }
 
-    if (wakelocks) {
+    if (opts & OPT_WAKELOCKS) {
         suspendService->updateStatsNow();
         std::stringstream wlStats;
         wlStats << suspendService->getStatsList();
         dprintf(fd, "\n%s\n", wlStats.str().c_str());
     }
-    if (suspend_stats) {
+
+    if (opts & OPT_WAKEUPS) {
+        std::ostringstream wakeupStats;
+        std::vector<WakeupInfo> wakeups;
+        suspendService->getWakeupList().getWakeupStats(&wakeups);
+        for (const auto& w : wakeups) {
+            wakeupStats << w.toString() << std::endl;
+        }
+        dprintf(fd, "Wakeups:\n%s\n", wakeupStats.str().c_str());
+    }
+
+    if (opts & OPT_SUSPEND_STATS) {
         Result<SuspendStats> res = suspendService->getSuspendStats();
         if (!res.ok()) {
             LOG(ERROR) << "SuspendControlService: " << res.error().message();

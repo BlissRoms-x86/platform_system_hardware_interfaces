@@ -17,6 +17,7 @@
 package android.system.suspend.internal;
 
 import android.system.suspend.internal.WakeLockInfo;
+import android.system.suspend.internal.WakeupInfo;
 
 /**
  * Interface exposed by the suspend hal that allows framework to toggle the suspend loop and
@@ -40,4 +41,9 @@ interface ISuspendControlServiceInternal {
      * Returns a list of wake lock stats.
      */
     WakeLockInfo[] getWakeLockStats();
+
+    /**
+     * Returns a list of wakeup stats.
+     */
+    WakeupInfo[] getWakeupStats();
 }
