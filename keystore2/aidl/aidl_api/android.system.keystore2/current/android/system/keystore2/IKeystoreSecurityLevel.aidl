@@ -18,8 +18,9 @@
 package android.system.keystore2;
 @VintfStability
 interface IKeystoreSecurityLevel {
-  android.system.keystore2.IKeystoreOperation create(in android.system.keystore2.KeyDescriptor key, in android.system.keystore2.KeyParameter[] operationParameters, in boolean forced, out @nullable android.system.keystore2.OperationChallenge challenge);
-  void generateKey(in android.system.keystore2.KeyDescriptor key, in android.system.keystore2.KeyParameter[] params, in byte[] entropy, out android.system.keystore2.KeyDescriptor resultKey, out @nullable android.system.keystore2.Certificate publicCert, out @nullable android.system.keystore2.CertificateChain certificateChain);
-  void importKey(in android.system.keystore2.KeyDescriptor key, in android.system.keystore2.KeyParameter[] params, in byte[] keyData, out android.system.keystore2.KeyDescriptor resultKey, out @nullable android.system.keystore2.Certificate publicCert, out @nullable android.system.keystore2.CertificateChain certificateChain);
-  void importWrappedKey(in android.system.keystore2.KeyDescriptor key, in android.system.keystore2.KeyDescriptor wrappingKey, in @nullable byte[] maskingKey, in android.system.keystore2.KeyParameter[] params, in android.system.keystore2.AuthenticatorSpec[] authenticators, out android.system.keystore2.KeyDescriptor resultKey, out @nullable android.system.keystore2.Certificate publicCert, out @nullable android.system.keystore2.CertificateChain certificateChain);
+  android.system.keystore2.CreateOperationResponse createOperation(in android.system.keystore2.KeyDescriptor key, in android.system.keystore2.KeyParameter[] operationParameters, in boolean forced);
+  android.system.keystore2.KeyMetadata generateKey(in android.system.keystore2.KeyDescriptor key, in @nullable android.system.keystore2.KeyDescriptor attestationKey, in android.system.keystore2.KeyParameter[] params, in int flags, in byte[] entropy);
+  android.system.keystore2.KeyMetadata importKey(in android.system.keystore2.KeyDescriptor key, in @nullable android.system.keystore2.KeyDescriptor attestationKey, in android.system.keystore2.KeyParameter[] params, in int flags, in byte[] keyData);
+  android.system.keystore2.KeyMetadata importWrappedKey(in android.system.keystore2.KeyDescriptor key, in android.system.keystore2.KeyDescriptor wrappingKey, in @nullable byte[] maskingKey, in android.system.keystore2.KeyParameter[] params, in android.system.keystore2.AuthenticatorSpec[] authenticators);
+  const int KEY_FLAG_AUTH_BOUND_WITHOUT_CRYPTOGRAPHIC_LSKF_BINDING = 1;
 }

@@ -16,12 +16,9 @@
 
 package android.system.keystore2;
 
-import android.system.keystore2.Certificate;
+import android.system.keystore2.KeyParameter;
 
 @VintfStability
-parcelable CertificateChain {
-    /**
-     * One or more concatenated DER encoded X509 certificates.
-     */
-    byte[] data;
+parcelable KeyParameters {
+    KeyParameter[] keyParameter;
 }

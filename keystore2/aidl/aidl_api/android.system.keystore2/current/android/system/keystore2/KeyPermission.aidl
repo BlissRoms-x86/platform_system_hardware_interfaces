@@ -29,4 +29,5 @@ enum KeyPermission {
   UPDATE = 128,
   USE = 256,
   USE_DEV_ID = 512,
+  USE_NO_LSKF_BINDING = 1024,
 }
