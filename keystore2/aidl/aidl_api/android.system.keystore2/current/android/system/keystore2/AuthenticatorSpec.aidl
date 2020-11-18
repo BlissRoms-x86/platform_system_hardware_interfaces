@@ -18,6 +18,6 @@
 package android.system.keystore2;
 @VintfStability
 parcelable AuthenticatorSpec {
-  android.system.keystore2.AuthenticatorType authenticatorType;
+  android.hardware.keymint.HardwareAuthenticatorType authenticatorType;
   long authenticatorId;
 }
