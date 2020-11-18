@@ -19,7 +19,7 @@ package android.system.keystore2;
 @VintfStability
 parcelable KeyMetadata {
   android.system.keystore2.KeyDescriptor key;
-  android.system.keystore2.SecurityLevel keySecurityLevel;
+  android.hardware.keymint.SecurityLevel keySecurityLevel;
   android.system.keystore2.Authorization[] authorizations;
   @nullable byte[] certificate;
   @nullable byte[] certificateChain;
