@@ -16,11 +16,11 @@
 
 package android.system.keystore2;
 
+import android.hardware.keymint.SecurityLevel;
 import android.system.keystore2.Domain;
 import android.system.keystore2.IKeystoreSecurityLevel;
 import android.system.keystore2.KeyDescriptor;
 import android.system.keystore2.KeyEntryResponse;
-import android.system.keystore2.SecurityLevel;
 
 /**
  * `IKeystoreService` is the primary interface to Keystore. It provides
