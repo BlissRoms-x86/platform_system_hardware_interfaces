@@ -16,7 +16,7 @@
 
 package android.system.keystore2;
 
-import android.system.keystore2.AuthenticatorType;
+import android.hardware.keymint.HardwareAuthenticatorType;
 
 /**
  * The authenticator spec is used by `IKeystoreSecurityLevel::importWrappedKey`
@@ -28,7 +28,7 @@ parcelable AuthenticatorSpec {
     /**
      * The type of the authenticator in question.
      */
-    AuthenticatorType authenticatorType;
+    HardwareAuthenticatorType authenticatorType;
     /**
      * The secure user id by which the given authenticator knows the
      * user that a key should be bound to.
