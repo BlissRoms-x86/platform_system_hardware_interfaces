@@ -28,6 +28,5 @@ parcelable KeyParameter {
     boolean boolValue;
     int integer;
     long longInteger;
-    long dateTime;
     @nullable byte[] blob;
 }
