@@ -16,12 +16,12 @@
 
 package android.system.keystore2;
 
+import android.hardware.keymint.KeyParameter;
 import android.system.keystore2.AuthenticatorSpec;
 import android.system.keystore2.CreateOperationResponse;
 import android.system.keystore2.IKeystoreOperation;
 import android.system.keystore2.KeyDescriptor;
 import android.system.keystore2.KeyMetadata;
-import android.system.keystore2.KeyParameter;
 
 /**
  * `IKeystoreSecurityLevel` is the per backend interface to Keystore. It provides
