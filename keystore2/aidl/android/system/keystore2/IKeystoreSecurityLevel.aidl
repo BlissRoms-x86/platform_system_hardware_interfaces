@@ -41,6 +41,8 @@ interface IKeystoreSecurityLevel {
 
     /**
      * This flag disables cryptographic binding to the LSKF for auth bound keys.
+     * It has no effect non auth bound keys. Such keys are not bound to the LSKF by
+     * default.
      */
     const int KEY_FLAG_AUTH_BOUND_WITHOUT_CRYPTOGRAPHIC_LSKF_BINDING = 0x1;
 
