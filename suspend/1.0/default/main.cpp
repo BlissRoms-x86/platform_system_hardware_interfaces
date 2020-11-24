@@ -27,8 +27,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <SuspendProperties.sysprop.h>
-
 #include "SuspendControlService.h"
 #include "SystemSuspend.h"
 
@@ -39,29 +37,17 @@ using android::base::unique_fd;
 using android::hardware::configureRpcThreadpool;
 using android::hardware::joinRpcThreadpool;
 using android::system::suspend::V1_0::ISystemSuspend;
-using android::system::suspend::V1_0::SleepTimeConfig;
 using android::system::suspend::V1_0::SuspendControlService;
 using android::system::suspend::V1_0::SuspendControlServiceInternal;
 using android::system::suspend::V1_0::SystemSuspend;
 using namespace std::chrono_literals;
-using namespace ::android::sysprop;
 
 static constexpr size_t kNativeWakeLockStatsCapacity = 1000;
 static constexpr char kSysClassWakeup[] = "/sys/class/wakeup";
 static constexpr char kSysPowerSuspendStats[] = "/sys/power/suspend_stats";
 static constexpr char kSysPowerWakeupCount[] = "/sys/power/wakeup_count";
 static constexpr char kSysPowerState[] = "/sys/power/state";
-// TODO(b/120445600): Use upstream mechanism for wakeup reasons once available
 static constexpr char kSysKernelWakeupReasons[] = "/sys/kernel/wakeup_reasons/last_resume_reason";
-static constexpr char kSysKernelSuspendTime[] = "/sys/kernel/wakeup_reasons/last_suspend_time";
-
-static constexpr uint32_t kDefaultMaxSleepTimeMillis = 60000;
-static constexpr uint32_t kDefaultBaseSleepTimeMillis = 100;
-static constexpr double kDefaultSleepTimeScaleFactor = 2.0;
-static constexpr uint32_t kDefaultBackoffThresholdCount = 0;
-static constexpr uint32_t kDefaultShortSuspendThresholdMillis = 0;
-static constexpr bool kDefaultFailedSuspendBackoffEnabled = true;
-static constexpr bool kDefaultShortSuspendBackoffEnabled = false;
 
 int main() {
     unique_fd wakeupCountFd{TEMP_FAILURE_RETRY(open(kSysPowerWakeupCount, O_CLOEXEC | O_RDWR))};
@@ -87,10 +73,6 @@ int main() {
     if (wakeupReasonsFd < 0) {
         PLOG(ERROR) << "SystemSuspend: Error opening " << kSysKernelWakeupReasons;
     }
-    unique_fd suspendTimeFd{TEMP_FAILURE_RETRY(open(kSysKernelSuspendTime, O_CLOEXEC | O_RDONLY))};
-    if (wakeupReasonsFd < 0) {
-        PLOG(ERROR) << "SystemSuspend: Error opening " << kSysKernelSuspendTime;
-    }
 
     // If either /sys/power/wakeup_count or /sys/power/state fail to open, we construct
     // SystemSuspend with blocking fds. This way this process will keep running, handle wake lock
@@ -101,24 +83,6 @@ int main() {
         // This will block all reads/writes to these fds from the suspend thread.
         Socketpair(SOCK_STREAM, &wakeupCountFd, &stateFd);
     }
-
-    SleepTimeConfig sleepTimeConfig = {
-        .baseSleepTime = std::chrono::milliseconds(
-            SuspendProperties::base_sleep_time_millis().value_or(kDefaultBaseSleepTimeMillis)),
-        .maxSleepTime = std::chrono::milliseconds(
-            SuspendProperties::max_sleep_time_millis().value_or(kDefaultMaxSleepTimeMillis)),
-        .sleepTimeScaleFactor =
-            SuspendProperties::sleep_time_scale_factor().value_or(kDefaultSleepTimeScaleFactor),
-        .backoffThreshold =
-            SuspendProperties::backoff_threshold_count().value_or(kDefaultBackoffThresholdCount),
-        .shortSuspendThreshold =
-            std::chrono::milliseconds(SuspendProperties::short_suspend_threshold_millis().value_or(
-                kDefaultShortSuspendThresholdMillis)),
-        .failedSuspendBackoffEnabled = SuspendProperties::failed_suspend_backoff_enabled().value_or(
-            kDefaultFailedSuspendBackoffEnabled),
-        .shortSuspendBackoffEnabled = SuspendProperties::short_suspend_backoff_enabled().value_or(
-            kDefaultShortSuspendBackoffEnabled),
-    };
 
     configureRpcThreadpool(1, true /* callerWillJoin */);
 
@@ -143,9 +107,8 @@ int main() {
     sp<SystemSuspend> suspend =
         new SystemSuspend(std::move(wakeupCountFd), std::move(stateFd), std::move(suspendStatsFd),
                           kNativeWakeLockStatsCapacity, std::move(kernelWakelockStatsFd),
-                          std::move(wakeupReasonsFd), std::move(suspendTimeFd), sleepTimeConfig,
-                          suspendControl, suspendControlInternal, true /* mUseSuspendCounter*/);
-
+                          std::move(wakeupReasonsFd), 100ms /* baseSleepTime */, suspendControl,
+                          suspendControlInternal, true /* mUseSuspendCounter*/);
     status_t status = suspend->registerAsService();
     if (android::OK != status) {
         LOG(FATAL) << "Unable to register system-suspend service: " << status;
