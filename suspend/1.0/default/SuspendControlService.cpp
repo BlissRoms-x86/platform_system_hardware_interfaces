@@ -69,8 +69,10 @@ binder::Status SuspendControlService::registerWakelockCallback(
     }
 
     auto l = std::lock_guard(mWakelockCallbackLock);
-    if (std::find(mWakelockCallbacks[name].begin(), mWakelockCallbacks[name].end(), callback) !=
-        mWakelockCallbacks[name].end()) {
+    if (std::find_if(mWakelockCallbacks[name].begin(), mWakelockCallbacks[name].end(),
+                     [&callback](const sp<IWakelockCallback>& i) {
+                         return IInterface::asBinder(callback) == IInterface::asBinder(i);
+                     }) != mWakelockCallbacks[name].end()) {
         LOG(ERROR) << __func__ << " Same wakelock callback has already been registered";
         return retOk(false, _aidl_return);
     }
@@ -87,17 +89,21 @@ binder::Status SuspendControlService::registerWakelockCallback(
 
 void SuspendControlService::binderDied(const wp<IBinder>& who) {
     auto l = std::lock_guard(mCallbackLock);
-    std::remove_if(mCallbacks.begin(), mCallbacks.end(), [&who](const sp<ISuspendCallback>& i) {
-        return who == IInterface::asBinder(i);
-    });
+    mCallbacks.erase(std::remove_if(mCallbacks.begin(), mCallbacks.end(),
+                                    [&who](const sp<ISuspendCallback>& i) {
+                                        return who == IInterface::asBinder(i);
+                                    }),
+                     mCallbacks.end());
 
     auto lWakelock = std::lock_guard(mWakelockCallbackLock);
     // Iterate through all wakelock names as same callback can be registered with different
     // wakelocks.
     for (auto wakelockIt = mWakelockCallbacks.begin(); wakelockIt != mWakelockCallbacks.end();) {
-        std::remove_if(
-            wakelockIt->second.begin(), wakelockIt->second.end(),
-            [&who](const sp<IWakelockCallback>& i) { return who == IInterface::asBinder(i); });
+        wakelockIt->second.erase(
+            std::remove_if(
+                wakelockIt->second.begin(), wakelockIt->second.end(),
+                [&who](const sp<IWakelockCallback>& i) { return who == IInterface::asBinder(i); }),
+            wakelockIt->second.end());
         if (wakelockIt->second.empty()) {
             wakelockIt = mWakelockCallbacks.erase(wakelockIt);
         } else {
