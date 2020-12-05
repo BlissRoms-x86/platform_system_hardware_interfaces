@@ -46,7 +46,7 @@ using android::system::suspend::V1_0::SystemSuspend;
 using namespace std::chrono_literals;
 using namespace ::android::sysprop;
 
-static constexpr size_t kNativeWakeLockStatsCapacity = 1000;
+static constexpr size_t kStatsCapacity = 1000;
 static constexpr char kSysClassWakeup[] = "/sys/class/wakeup";
 static constexpr char kSysPowerSuspendStats[] = "/sys/power/suspend_stats";
 static constexpr char kSysPowerWakeupCount[] = "/sys/power/wakeup_count";
@@ -140,11 +140,10 @@ int main() {
     sp<android::ProcessState> ps{android::ProcessState::self()};
     ps->startThreadPool();
 
-    sp<SystemSuspend> suspend =
-        new SystemSuspend(std::move(wakeupCountFd), std::move(stateFd), std::move(suspendStatsFd),
-                          kNativeWakeLockStatsCapacity, std::move(kernelWakelockStatsFd),
-                          std::move(wakeupReasonsFd), std::move(suspendTimeFd), sleepTimeConfig,
-                          suspendControl, suspendControlInternal, true /* mUseSuspendCounter*/);
+    sp<SystemSuspend> suspend = new SystemSuspend(
+        std::move(wakeupCountFd), std::move(stateFd), std::move(suspendStatsFd), kStatsCapacity,
+        std::move(kernelWakelockStatsFd), std::move(wakeupReasonsFd), std::move(suspendTimeFd),
+        sleepTimeConfig, suspendControl, suspendControlInternal, true /* mUseSuspendCounter*/);
 
     status_t status = suspend->registerAsService();
     if (android::OK != status) {
