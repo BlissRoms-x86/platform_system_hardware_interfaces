@@ -130,7 +130,7 @@ void WakeLock::releaseOnce() {
 }
 
 SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_fd suspendStatsFd,
-                             size_t maxNativeStatsEntries, unique_fd kernelWakelockStatsFd,
+                             size_t maxStatsEntries, unique_fd kernelWakelockStatsFd,
                              unique_fd wakeupReasonsFd, unique_fd suspendTimeFd,
                              const SleepTimeConfig& sleepTimeConfig,
                              const sp<SuspendControlService>& controlService,
@@ -146,7 +146,8 @@ SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_
       mNumConsecutiveBadSuspends(0),
       mControlService(controlService),
       mControlServiceInternal(controlServiceInternal),
-      mStatsList(maxNativeStatsEntries, std::move(kernelWakelockStatsFd)),
+      mStatsList(maxStatsEntries, std::move(kernelWakelockStatsFd)),
+      mWakeupList(maxStatsEntries),
       mUseSuspendCounter(useSuspendCounter),
       mWakeLockFd(-1),
       mWakeUnlockFd(-1),
@@ -166,14 +167,12 @@ SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_
 }
 
 bool SystemSuspend::enableAutosuspend() {
-    static bool initialized = false;
-    if (initialized) {
+    if (mAutosuspendEnabled.test_and_set()) {
         LOG(ERROR) << "Autosuspend already started.";
         return false;
     }
 
     initAutosuspend();
-    initialized = true;
     return true;
 }
 
@@ -256,11 +255,12 @@ void SystemSuspend::initAutosuspend() {
             }
 
             struct SuspendTime suspendTime = readSuspendTime(mSuspendTimeFd);
+            updateSleepTime(success, suspendTime.suspendTime);
 
             std::vector<std::string> wakeupReasons = readWakeupReasons(mWakeupReasonsFd);
-            mControlService->notifyWakeup(success, wakeupReasons);
+            mWakeupList.update(wakeupReasons);
 
-            updateSleepTime(success, suspendTime.suspendTime);
+            mControlService->notifyWakeup(success, wakeupReasons);
         }
     });
     autosuspendThread.detach();
@@ -317,6 +317,10 @@ const WakeLockEntryList& SystemSuspend::getStatsList() const {
 
 void SystemSuspend::updateStatsNow() {
     mStatsList.updateNow();
+}
+
+const WakeupList& SystemSuspend::getWakeupList() const {
+    return mWakeupList;
 }
 
 /**

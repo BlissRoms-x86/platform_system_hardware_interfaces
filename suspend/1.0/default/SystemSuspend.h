@@ -22,12 +22,14 @@
 #include <android/system/suspend/1.0/ISystemSuspend.h>
 #include <hidl/HidlTransportSupport.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <string>
 
 #include "SuspendControlService.h"
 #include "WakeLockEntryList.h"
+#include "WakeupList.h"
 
 namespace android {
 namespace system {
@@ -91,7 +93,7 @@ class WakeLock : public IWakeLock {
 class SystemSuspend : public ISystemSuspend {
    public:
     SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_fd suspendStatsFd,
-                  size_t maxNativeStatsEntries, unique_fd kernelWakelockStatsFd,
+                  size_t maxStatsEntries, unique_fd kernelWakelockStatsFd,
                   unique_fd wakeupReasonsFd, unique_fd suspendTimeFd,
                   const SleepTimeConfig& sleepTimeConfig,
                   const sp<SuspendControlService>& controlService,
@@ -103,6 +105,7 @@ class SystemSuspend : public ISystemSuspend {
     bool enableAutosuspend();
     bool forceSuspend();
 
+    const WakeupList& getWakeupList() const;
     const WakeLockEntryList& getStatsList() const;
     void updateWakeLockStatOnRelease(const std::string& name, int pid, TimestampType timeNow);
     void updateStatsNow();
@@ -134,6 +137,7 @@ class SystemSuspend : public ISystemSuspend {
     sp<SuspendControlServiceInternal> mControlServiceInternal;
 
     WakeLockEntryList mStatsList;
+    WakeupList mWakeupList;
 
     // If true, use mSuspendCounter to keep track of native wake locks. Otherwise, rely on
     // /sys/power/wake_lock interface to block suspend.
@@ -142,6 +146,8 @@ class SystemSuspend : public ISystemSuspend {
     unique_fd mWakeLockFd;
     unique_fd mWakeUnlockFd;
     unique_fd mWakeupReasonsFd;
+
+    std::atomic_flag mAutosuspendEnabled = ATOMIC_FLAG_INIT;
 };
 
 }  // namespace V1_0
