@@ -16,7 +16,7 @@
 
 package android.system.keystore2;
 
-import android.hardware.keymint.HardwareAuthenticatorType;
+import android.hardware.security.keymint.HardwareAuthenticatorType;
 
 /**
  * The authenticator spec is used by `IKeystoreSecurityLevel::importWrappedKey`
