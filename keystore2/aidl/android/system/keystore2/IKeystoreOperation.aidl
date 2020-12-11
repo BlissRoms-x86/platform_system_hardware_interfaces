@@ -30,7 +30,7 @@ package android.system.keystore2;
  * Error conditions are reported as service specific error.
  * Positive codes correspond to `android.system.keystore2.ResponseCode`
  * and indicate error conditions diagnosed by the Keystore 2.0 service.
- * Negative codes correspond to `android.hardware.keymint.ErrorCode` and
+ * Negative codes correspond to `android.hardware.security.keymint.ErrorCode` and
  * indicate KeyMint back end errors. Refer to the KeyMint interface spec for
  * detail.
  */
