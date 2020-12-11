@@ -16,7 +16,7 @@
 
 package android.system.keystore2;
 
-import android.hardware.keymint.SecurityLevel;
+import android.hardware.security.keymint.SecurityLevel;
 import android.system.keystore2.Authorization;
 import android.system.keystore2.IKeystoreSecurityLevel;
 import android.system.keystore2.KeyDescriptor;
