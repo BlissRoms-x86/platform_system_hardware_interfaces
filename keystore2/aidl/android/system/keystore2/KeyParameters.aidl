@@ -16,7 +16,7 @@
 
 package android.system.keystore2;
 
-import android.hardware.security.keymint.KeyParameter;
+import android.hardware.keymint.KeyParameter;
 
 @VintfStability
 parcelable KeyParameters {
