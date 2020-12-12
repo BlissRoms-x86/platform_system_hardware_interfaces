@@ -18,7 +18,7 @@
 package android.system.keystore2;
 @VintfStability
 interface IKeystoreService {
-  android.system.keystore2.IKeystoreSecurityLevel getSecurityLevel(in android.hardware.keymint.SecurityLevel securityLevel);
+  android.system.keystore2.IKeystoreSecurityLevel getSecurityLevel(in android.hardware.security.keymint.SecurityLevel securityLevel);
   android.system.keystore2.KeyEntryResponse getKeyEntry(in android.system.keystore2.KeyDescriptor key);
   void updateSubcomponent(in android.system.keystore2.KeyDescriptor key, in @nullable byte[] publicCert, in @nullable byte[] certificateChain);
   android.system.keystore2.KeyDescriptor[] listEntries(in android.system.keystore2.Domain domain, in long nspace);
