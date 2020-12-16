@@ -49,6 +49,7 @@ static const char kSleepState[] = "mem";
 // /sys/kernel/debug/wakeup_sources.
 static constexpr char kSysPowerWakeLock[] = "/sys/power/wake_lock";
 static constexpr char kSysPowerWakeUnlock[] = "/sys/power/wake_unlock";
+static constexpr char kUnknownWakeup[] = "unknown";
 
 // This function assumes that data in fd is small enough that it can be read in one go.
 // We use this function instead of the ones available in libbase because it doesn't block
@@ -67,18 +68,27 @@ static inline int getCallingPid() {
 static std::vector<std::string> readWakeupReasons(int fd) {
     std::vector<std::string> wakeupReasons;
     std::string reasonlines;
-    std::string reasonline;
 
     lseek(fd, 0, SEEK_SET);
     if (!ReadFdToString(fd, &reasonlines)) {
         LOG(ERROR) << "failed to read wakeup reasons";
-        return wakeupReasons;
+        // Return unknown wakeup reason if we fail to read
+        return {kUnknownWakeup};
     }
 
     std::stringstream ss(reasonlines);
-    while (ss.good()) {
-        std::getline(ss, reasonline, '\n');
-        wakeupReasons.push_back(reasonline);
+    for (std::string reasonline; std::getline(ss, reasonline);) {
+        reasonline = ::android::base::Trim(reasonline);
+
+        // Only include non-empty reason lines
+        if (!reasonline.empty()) {
+            wakeupReasons.push_back(reasonline);
+        }
+    }
+
+    // Empty wakeup reason found. Record as unknown wakeup
+    if (wakeupReasons.empty()) {
+        wakeupReasons.push_back(kUnknownWakeup);
     }
 
     return wakeupReasons;
