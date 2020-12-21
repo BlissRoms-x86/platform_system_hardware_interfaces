@@ -370,7 +370,6 @@ void WakeLockEntryList::updateNow() {
 }
 
 void WakeLockEntryList::getWakeLockStats(std::vector<WakeLockInfo>* aidl_return) const {
-    int numNativeWakelock = 0;
     // Under no circumstances should the lock be held while getting kernel wakelock stats
     {
         std::lock_guard<std::mutex> lock(mStatsLock);
@@ -378,11 +377,7 @@ void WakeLockEntryList::getWakeLockStats(std::vector<WakeLockInfo>* aidl_return)
             aidl_return->emplace_back(entry);
         }
     }
-
-    numNativeWakelock = aidl_return->size();
     getKernelWakelockStats(aidl_return);
-    LOG(INFO) << "Number of native wakelocks: " << numNativeWakelock
-              << ", total wakelocks: " << aidl_return->size();
 }
 
 }  // namespace V1_0
