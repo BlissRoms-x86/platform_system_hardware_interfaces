@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package android.system.suspend.internal;
 
+import android.system.suspend.internal.SuspendInfo;
 import android.system.suspend.internal.WakeLockInfo;
 import android.system.suspend.internal.WakeupInfo;
 
@@ -46,4 +47,9 @@ interface ISuspendControlServiceInternal {
      * Returns a list of wakeup stats.
      */
     WakeupInfo[] getWakeupStats();
+
+    /**
+     * Returns stats related to suspend.
+     */
+    SuspendInfo getSuspendStats();
 }
