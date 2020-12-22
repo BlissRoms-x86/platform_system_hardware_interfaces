@@ -161,6 +161,17 @@ binder::Status SuspendControlServiceInternal::forceSuspend(bool* _aidl_return) {
     return retOk(suspendService != nullptr && suspendService->forceSuspend(), _aidl_return);
 }
 
+binder::Status SuspendControlServiceInternal::getSuspendStats(SuspendInfo* _aidl_return) {
+    const auto suspendService = mSuspend.promote();
+    if (!suspendService) {
+        return binder::Status::fromExceptionCode(binder::Status::Exception::EX_NULL_POINTER,
+                                                 String8("Null reference to suspendService"));
+    }
+
+    suspendService->getSuspendInfo(_aidl_return);
+    return binder::Status::ok();
+}
+
 binder::Status SuspendControlServiceInternal::getWakeLockStats(
     std::vector<WakeLockInfo>* _aidl_return) {
     const auto suspendService = mSuspend.promote();
@@ -190,11 +201,12 @@ binder::Status SuspendControlServiceInternal::getWakeupStats(
 static std::string dumpUsage() {
     return "\nUsage: adb shell dumpsys suspend_control_internal [option]\n\n"
            "   Options:\n"
-           "       --wakelocks      : returns wakelock stats.\n"
-           "       --wakeups        : returns wakeup stats.\n"
-           "       --suspend_stats  : returns suspend stats.\n"
-           "       --all or -a      : returns all stats.\n"
-           "       --help or -h     : prints this message.\n\n"
+           "       --wakelocks        : returns wakelock stats.\n"
+           "       --wakeups          : returns wakeup stats.\n"
+           "       --kernel_suspends  : returns suspend success/error stats from the kernel\n"
+           "       --suspend_controls : returns suspend control stats\n"
+           "       --all or -a        : returns all stats.\n"
+           "       --help or -h       : prints this message.\n\n"
            "   Note: All stats are returned  if no or (an\n"
            "         invalid) option is specified.\n\n";
 }
@@ -210,7 +222,8 @@ status_t SuspendControlServiceInternal::dump(int fd, const Vector<String16>& arg
     enum : int32_t {
         OPT_WAKELOCKS = 1 << 0,
         OPT_WAKEUPS = 1 << 1,
-        OPT_SUSPEND_STATS = 1 << 2,
+        OPT_KERNEL_SUSPENDS = 1 << 2,
+        OPT_SUSPEND_CONTROLS = 1 << 3,
         OPT_ALL = ~0,
     };
     int opts = 0;
@@ -223,8 +236,10 @@ status_t SuspendControlServiceInternal::dump(int fd, const Vector<String16>& arg
                 opts |= OPT_WAKELOCKS;
             } else if (arg == String16("--wakeups")) {
                 opts |= OPT_WAKEUPS;
-            } else if (arg == String16("--suspend_stats")) {
-                opts |= OPT_SUSPEND_STATS;
+            } else if (arg == String16("--kernel_suspends")) {
+                opts |= OPT_KERNEL_SUSPENDS;
+            } else if (arg == String16("--suspend_controls")) {
+                opts |= OPT_SUSPEND_CONTROLS;
             } else if (arg == String16("-a") || arg == String16("--all")) {
                 opts = OPT_ALL;
             } else if (arg == String16("-h") || arg == String16("--help")) {
@@ -252,7 +267,7 @@ status_t SuspendControlServiceInternal::dump(int fd, const Vector<String16>& arg
         dprintf(fd, "Wakeups:\n%s\n", wakeupStats.str().c_str());
     }
 
-    if (opts & OPT_SUSPEND_STATS) {
+    if (opts & OPT_KERNEL_SUSPENDS) {
         Result<SuspendStats> res = suspendService->getSuspendStats();
         if (!res.ok()) {
             LOG(ERROR) << "SuspendControlService: " << res.error().message();
@@ -286,6 +301,25 @@ status_t SuspendControlServiceInternal::dump(int fd, const Vector<String16>& arg
             "last_failed_step", stats.lastFailedStep.c_str());
         // clang-format on
         dprintf(fd, "\n%s\n", suspendStats.c_str());
+    }
+
+    if (opts & OPT_SUSPEND_CONTROLS) {
+        std::ostringstream suspendInfo;
+        SuspendInfo info;
+        suspendService->getSuspendInfo(&info);
+        suspendInfo << "suspend attempts: " << info.suspendAttemptCount << std::endl;
+        suspendInfo << "failed suspends: " << info.failedSuspendCount << std::endl;
+        suspendInfo << "short suspends: " << info.shortSuspendCount << std::endl;
+        suspendInfo << "good suspend time: " << info.goodSuspendTimeMillis << " ms" << std::endl;
+        suspendInfo << "short suspend time: " << info.shortSuspendTimeMillis << " ms" << std::endl;
+        suspendInfo << "suspend overhead: " << info.suspendOverheadTimeMillis << " ms" << std::endl;
+        suspendInfo << "failed suspend overhead: " << info.failedSuspendOverheadTimeMillis << " ms"
+                    << std::endl;
+        suspendInfo << "new backoffs: " << info.newBackoffCount << std::endl;
+        suspendInfo << "backoff continuations: " << info.backoffContinueCount << std::endl;
+        suspendInfo << "total sleep time between suspends: " << info.sleepTimeMillis << " ms"
+                    << std::endl;
+        dprintf(fd, "Suspend Info:\n%s\n", suspendInfo.str().c_str());
     }
 
     return OK;
