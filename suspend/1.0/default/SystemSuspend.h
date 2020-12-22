@@ -20,6 +20,7 @@
 #include <android-base/result.h>
 #include <android-base/unique_fd.h>
 #include <android/system/suspend/1.0/ISystemSuspend.h>
+#include <android/system/suspend/internal/SuspendInfo.h>
 #include <hidl/HidlTransportSupport.h>
 
 #include <atomic>
@@ -41,6 +42,7 @@ using ::android::base::unique_fd;
 using ::android::hardware::hidl_string;
 using ::android::hardware::interfacesEqual;
 using ::android::hardware::Return;
+using ::android::system::suspend::internal::SuspendInfo;
 
 using namespace std::chrono_literals;
 
@@ -110,6 +112,7 @@ class SystemSuspend : public ISystemSuspend {
     void updateWakeLockStatOnRelease(const std::string& name, int pid, TimestampType timeNow);
     void updateStatsNow();
     Result<SuspendStats> getSuspendStats();
+    void getSuspendInfo(SuspendInfo* info);
     std::chrono::milliseconds getSleepTime() const;
 
    private:
@@ -124,14 +127,17 @@ class SystemSuspend : public ISystemSuspend {
     unique_fd mSuspendStatsFd;
     unique_fd mSuspendTimeFd;
 
+    std::mutex mSuspendInfoLock;
+    SuspendInfo mSuspendInfo;
+
     const SleepTimeConfig kSleepTimeConfig;
 
     // Amount of thread sleep time between consecutive iterations of the suspend loop
     std::chrono::milliseconds mSleepTime;
     int32_t mNumConsecutiveBadSuspends;
 
-    // Updates thread sleep time depending on the result of suspend attempt
-    void updateSleepTime(bool success, std::chrono::nanoseconds suspendTime);
+    // Updates thread sleep time and suspend stats depending on the result of suspend attempt
+    void updateSleepTime(bool success, const struct SuspendTime& suspendTime);
 
     sp<SuspendControlService> mControlService;
     sp<SuspendControlServiceInternal> mControlServiceInternal;
