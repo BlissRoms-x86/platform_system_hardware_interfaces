@@ -47,7 +47,7 @@ cc_binary {
     init_rc: ["android.system.suspend@1.0-service.rc"],
     vintf_fragments: ["android.system.suspend@1.0-service.xml"],
     shared_libs: [
-        "android.system.suspend.control-cpp",
+        "android.system.suspend.control-V1-cpp",
         "android.system.suspend.control.internal-cpp",
         "android.system.suspend@1.0",
         "SuspendProperties",
@@ -70,7 +70,7 @@ cc_test {
         "system_suspend_stats_defaults",
     ],
     static_libs: [
-        "android.system.suspend.control-cpp",
+        "android.system.suspend.control-V1-cpp",
         "android.system.suspend.control.internal-cpp",
         "android.system.suspend@1.0",
         "libgmock",
@@ -97,7 +97,7 @@ cc_test {
         "libutils",
     ],
     static_libs: [
-        "android.system.suspend.control-cpp",
+        "android.system.suspend.control-V1-cpp",
     ],
     test_suites: ["device-tests", "vts"],
     require_root: true,
@@ -109,7 +109,7 @@ cc_benchmark {
         "system_suspend_defaults",
     ],
     shared_libs: [
-        "android.system.suspend.control-cpp",
+        "android.system.suspend.control-V1-cpp",
         "android.system.suspend.control.internal-cpp",
         "android.system.suspend@1.0",
     ],
