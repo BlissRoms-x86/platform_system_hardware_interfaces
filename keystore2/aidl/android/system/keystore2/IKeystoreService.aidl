@@ -89,6 +89,10 @@ interface IKeystoreService {
      *
      * Callers require the `UPDATE` permission.
      *
+     * If no key by the given name is found and only a the certificateChain argument is given,
+     * A new entry is created by the given name. This is used by the Keystore SPI to create.
+     * pure certificate entries. In this case the `REBIND` permission is checked.
+     *
      * ## Error conditions
      * `ResponseCode::KEY_NOT_FOUND` if the key did not exist.
      * `ResponseCode::PERMISSION_DENIED` if the caller does not possess the `UPDATE` permission
