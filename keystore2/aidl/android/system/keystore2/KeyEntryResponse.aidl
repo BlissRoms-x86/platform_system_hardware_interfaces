@@ -31,7 +31,7 @@ parcelable KeyEntryResponse {
      * operations, generate, and import keys. This field is optional,
      * it is only populated by `IKeystoreService::getKeyEntry`.
      */
-    IKeystoreSecurityLevel iSecurityLevel;
+    @nullable IKeystoreSecurityLevel iSecurityLevel;
     /**
      * The KeyId based key descriptor. Using this key descriptor for subsequent
      * operations ensures that the private key material used in those operations
