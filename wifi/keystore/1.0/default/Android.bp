@@ -7,9 +7,11 @@ cc_library_static {
     ],
     srcs: ["keystore.cpp"],
     shared_libs: [
+        "android.system.keystore2-ndk_platform",
         "android.system.wifi.keystore@1.0",
         "libbase",
         "libbinder",
+        "libbinder_ndk",
         "libcrypto",
         "libcutils",
         "libhidlbase",
