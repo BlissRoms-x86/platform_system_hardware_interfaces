@@ -1,5 +1,6 @@
 #include <aidl/android/system/keystore2/IKeystoreService.h>
 #include <android-base/logging.h>
+#include <android-base/strings.h>
 #include <android/binder_manager.h>
 #include <android/security/keystore/BnKeystoreOperationResultCallback.h>
 #include <android/security/keystore/BnKeystoreResponseCallback.h>
@@ -140,10 +141,10 @@ std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
 
     bool ca_cert = false;
     std::string alias = key.c_str();
-    if (alias.find("CACERT_") == 0) {
+    if (android::base::StartsWith(alias, "CACERT_")) {
         alias = alias.substr(7);
         ca_cert = true;
-    } else if (alias.find("USRCERT_") == 0) {
+    } else if (android::base::StartsWith(alias, "USRCERT_")) {
         alias = alias.substr(8);
     }
 
@@ -156,7 +157,7 @@ std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
 
     // If the key_id starts with the grant id prefix, we parse the following string as numeric
     // grant id. We can then use the grant domain without alias to load the designated key.
-    if (alias.find(keystore2_grant_id_prefix) == 0) {
+    if (android::base::StartsWith(alias, keystore2_grant_id_prefix)) {
         std::stringstream s(alias.substr(keystore2_grant_id_prefix.size()));
         uint64_t tmp;
         s >> std::hex >> tmp;
