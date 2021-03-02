@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *////////////////////////////////////////////////////////////////////////////////
+ */
+///////////////////////////////////////////////////////////////////////////////
 // THIS FILE IS IMMUTABLE. DO NOT EDIT IN ANY CASE.                          //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -44,4 +45,5 @@ enum ResponseCode {
   OPERATION_BUSY = 19,
   INVALID_ARGUMENT = 20,
   TOO_MUCH_DATA = 21,
+  OUT_OF_KEYS = 22,
 }
