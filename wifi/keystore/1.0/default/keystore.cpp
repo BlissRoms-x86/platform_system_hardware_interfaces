@@ -60,18 +60,6 @@ namespace {
 
 constexpr const int64_t KS2_NAMESPACE_WIFI = 102;
 
-int64_t getNamespaceForCurrentUid() {
-    auto uid = getuid();
-    switch (uid) {
-        case AID_WIFI:
-            return KS2_NAMESPACE_WIFI;
-        // 0 is the super user namespace, and nothing has access to this namespace on user builds.
-        // So this will always fail.
-        default:
-            return 0;
-    }
-}
-
 constexpr const char kKeystoreServiceName[] = "android.security.keystore";
 constexpr const char kKeystore2ServiceName[] = "android.system.keystore2";
 
@@ -101,6 +89,10 @@ NullOr<const Algorithm&> getKeyAlgorithmFromKeyCharacteristics(
 // openssl library used by supplicant.
 std::vector<uint8_t> convertCertToPem(const std::vector<uint8_t>& cert_bytes) {
     bssl::UniquePtr<BIO> cert_bio(BIO_new_mem_buf(cert_bytes.data(), cert_bytes.size()));
+    if (!cert_bio) {
+        LOG(ERROR) << AT << "Failed to create BIO";
+        return {};
+    }
     // Check if the cert is already in PEM format, on devices which have saved
     // credentials from previous releases when upgrading to R.
     bssl::UniquePtr<X509> cert_pem(PEM_read_bio_X509(cert_bio.get(), nullptr, nullptr, nullptr));
@@ -116,7 +108,7 @@ std::vector<uint8_t> convertCertToPem(const std::vector<uint8_t>& cert_bytes) {
         return cert_bytes;
     }
     bssl::UniquePtr<BIO> pem_bio(BIO_new(BIO_s_mem()));
-    if (!PEM_write_bio_X509(pem_bio.get(), cert.get())) {
+    if (!pem_bio || !PEM_write_bio_X509(pem_bio.get(), cert.get())) {
         LOG(ERROR) << AT << "Could not convert cert to PEM format";
         return {};
     }
@@ -128,7 +120,71 @@ std::vector<uint8_t> convertCertToPem(const std::vector<uint8_t>& cert_bytes) {
     return {pem_bytes, pem_bytes + pem_len};
 }
 
+// Helper method to extract public key from the certificate.
+std::vector<uint8_t> extractPubKey(const std::vector<uint8_t>& cert_bytes) {
+    bssl::UniquePtr<BIO> cert_bio(BIO_new_mem_buf(cert_bytes.data(), cert_bytes.size()));
+    if (!cert_bio) {
+        LOG(ERROR) << AT << "Failed to create BIO";
+        return {};
+    }
+    bssl::UniquePtr<X509> decoded_cert(d2i_X509_bio(cert_bio.get(), nullptr));
+    if (!decoded_cert) {
+        LOG(INFO) << AT << "Could not decode the cert, trying decoding as PEM";
+        decoded_cert =
+            bssl::UniquePtr<X509>(PEM_read_bio_X509(cert_bio.get(), nullptr, nullptr, nullptr));
+    }
+    if (!decoded_cert) {
+        LOG(ERROR) << AT << "Could not decode the cert.";
+        return {};
+    }
+    bssl::UniquePtr<EVP_PKEY> pub_key(X509_get_pubkey(decoded_cert.get()));
+    if (!pub_key) {
+        LOG(ERROR) << AT << "Could not extract public key.";
+        return {};
+    }
+    bssl::UniquePtr<BIO> pub_key_bio(BIO_new(BIO_s_mem()));
+    if (!pub_key_bio || i2d_PUBKEY_bio(pub_key_bio.get(), pub_key.get()) <= 0) {
+        LOG(ERROR) << AT << "Could not serialize public key.";
+        return {};
+    }
+    const uint8_t* pub_key_bytes;
+    size_t pub_key_len;
+    if (!BIO_mem_contents(pub_key_bio.get(), &pub_key_bytes, &pub_key_len)) {
+        LOG(ERROR) << AT << "Could not get bytes from BIO.";
+        return {};
+    }
+
+    return {pub_key_bytes, pub_key_bytes + pub_key_len};
+}
+
+ks2::KeyDescriptor mkKeyDescriptor(const std::string& alias) {
+    // If the key_id starts with the grant id prefix, we parse the following string as numeric
+    // grant id. We can then use the grant domain without alias to load the designated key.
+    if (android::base::StartsWith(alias, keystore2_grant_id_prefix)) {
+        std::stringstream s(alias.substr(keystore2_grant_id_prefix.size()));
+        uint64_t tmp;
+        s >> std::hex >> tmp;
+        if (s.fail() || !s.eof()) {
+            LOG(ERROR) << AT << "Couldn't parse grant name: " << alias;
+        }
+        return {
+            .nspace = static_cast<int64_t>(tmp),
+            .domain = ks2::Domain::GRANT,
+            .alias = std::nullopt,
+            .blob = std::nullopt,
+        };
+    } else {
+        return {
+            .domain = ks2::Domain::SELINUX,
+            .nspace = KS2_NAMESPACE_WIFI,
+            .alias = alias,
+            .blob = std::nullopt,
+        };
+    }
+}
+
 using android::hardware::hidl_string;
+using android::hardware::hidl_vec;
 
 std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
     ::ndk::SpAIBinder keystoreBinder(AServiceManager_checkService(kKeystore2ServiceName));
@@ -148,12 +204,7 @@ std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
         alias = alias.substr(8);
     }
 
-    ks2::KeyDescriptor descriptor = {
-        .domain = ks2::Domain::SELINUX,
-        .nspace = getNamespaceForCurrentUid(),
-        .alias = alias,
-        .blob = std::nullopt,
-    };
+    ks2::KeyDescriptor descriptor = mkKeyDescriptor(alias);
 
     // If the key_id starts with the grant id prefix, we parse the following string as numeric
     // grant id. We can then use the grant domain without alias to load the designated key.
@@ -175,7 +226,7 @@ std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
         auto exception_code = rc.getExceptionCode();
         if (exception_code == EX_SERVICE_SPECIFIC) {
             LOG(ERROR) << AT << "Keystore getKeyEntry returned service specific error: "
-                       << rc.getExceptionCode();
+                       << rc.getServiceSpecificError();
         } else {
             LOG(ERROR) << AT << "Communication with Keystore getKeyEntry failed error: "
                        << exception_code;
@@ -191,6 +242,145 @@ std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
         LOG(ERROR) << AT << "No " << (ca_cert ? "CA" : "client") << " certificate found.";
         return {};
     }
+}
+
+std::optional<std::vector<uint8_t>> keyStore2GetPubKey(const hidl_string& key) {
+    ::ndk::SpAIBinder keystoreBinder(AServiceManager_checkService(kKeystore2ServiceName));
+    auto keystore2 = ks2::IKeystoreService::fromBinder(keystoreBinder);
+
+    if (!keystore2) {
+        LOG(WARNING) << AT << "Unable to connect to Keystore 2.0.";
+        return std::nullopt;
+    }
+
+    std::string alias = key.c_str();
+    if (android::base::StartsWith(alias, "USRPKEY_")) {
+        alias = alias.substr(8);
+    }
+
+    ks2::KeyDescriptor descriptor = mkKeyDescriptor(alias);
+
+    ks2::KeyEntryResponse response;
+    auto rc = keystore2->getKeyEntry(descriptor, &response);
+    if (!rc.isOk()) {
+        auto exception_code = rc.getExceptionCode();
+        if (exception_code == EX_SERVICE_SPECIFIC) {
+            LOG(ERROR) << AT << "Keystore getKeyEntry returned service specific error: "
+                       << rc.getServiceSpecificError();
+        } else {
+            LOG(ERROR) << AT << "Communication with Keystore getKeyEntry failed error: "
+                       << exception_code;
+        }
+        return std::nullopt;
+    }
+
+    if (!response.metadata.certificate) {
+        LOG(ERROR) << AT << "No public key found.";
+        return std::nullopt;
+    }
+
+    std::optional<std::vector<uint8_t>> pub_key(extractPubKey(*response.metadata.certificate));
+    return std::move(pub_key);
+}
+
+std::optional<std::vector<uint8_t>> keyStore2Sign(const hidl_string& key,
+                                                  const hidl_vec<uint8_t>& dataToSign) {
+    ::ndk::SpAIBinder keystoreBinder(AServiceManager_checkService(kKeystore2ServiceName));
+    auto keystore2 = ks2::IKeystoreService::fromBinder(keystoreBinder);
+
+    if (!keystore2) {
+        LOG(WARNING) << AT << "Unable to connect to Keystore 2.0.";
+        return std::nullopt;
+    }
+
+    std::string alias = key.c_str();
+    if (android::base::StartsWith(alias, "USRPKEY_")) {
+        alias = alias.substr(8);
+    }
+
+    ks2::KeyDescriptor descriptor = mkKeyDescriptor(alias);
+
+    ks2::KeyEntryResponse response;
+    auto rc = keystore2->getKeyEntry(descriptor, &response);
+    if (!rc.isOk()) {
+        auto exception_code = rc.getExceptionCode();
+        if (exception_code == EX_SERVICE_SPECIFIC) {
+            LOG(ERROR) << AT << "Keystore getKeyEntry returned service specific error: "
+                       << rc.getServiceSpecificError();
+        } else {
+            LOG(ERROR) << AT << "Communication with Keystore getKeyEntry failed error: "
+                       << exception_code;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<KMV1::Algorithm> algorithm;
+    for (auto& element : response.metadata.authorizations) {
+        if (element.keyParameter.tag == KMV1::Tag::ALGORITHM) {
+            algorithm = element.keyParameter.value.get<KMV1::KeyParameterValue::algorithm>();
+        }
+    }
+
+    if (!algorithm) {
+        LOG(ERROR) << AT << "Could not find signing algorithm.";
+        return std::nullopt;
+    }
+
+    auto sec_level = response.iSecurityLevel;
+
+    std::vector<KMV1::KeyParameter> op_params(4);
+    op_params[0] = KMV1::KeyParameter{
+        .tag = KMV1::Tag::PURPOSE,
+        .value = KMV1::KeyParameterValue::make<KMV1::KeyParameterValue::keyPurpose>(
+            KMV1::KeyPurpose::SIGN)};
+    op_params[1] = KMV1::KeyParameter{
+        .tag = KMV1::Tag::ALGORITHM,
+        .value = KMV1::KeyParameterValue::make<KMV1::KeyParameterValue::algorithm>(*algorithm)};
+    op_params[2] = KMV1::KeyParameter{
+        .tag = KMV1::Tag::PADDING,
+        .value = KMV1::KeyParameterValue::make<KMV1::KeyParameterValue::paddingMode>(
+            KMV1::PaddingMode::NONE)};
+    op_params[3] = KMV1::KeyParameter{
+        .tag = KMV1::Tag::DIGEST,
+        .value =
+            KMV1::KeyParameterValue::make<KMV1::KeyParameterValue::digest>(KMV1::Digest::NONE)};
+
+    ks2::CreateOperationResponse op_response;
+
+    rc = sec_level->createOperation(descriptor, op_params, false /* forced */, &op_response);
+    if (!rc.isOk()) {
+        auto exception_code = rc.getExceptionCode();
+        if (exception_code == EX_SERVICE_SPECIFIC) {
+            LOG(ERROR) << AT << "Keystore createOperation returned service specific error: "
+                       << rc.getServiceSpecificError();
+        } else {
+            LOG(ERROR) << AT << "Communication with Keystore createOperation failed error: "
+                       << exception_code;
+        }
+        return std::nullopt;
+    }
+
+    auto op = op_response.iOperation;
+    std::optional<std::vector<uint8_t>> output = std::nullopt;
+
+    rc = op->finish(dataToSign, {}, &output);
+    if (!rc.isOk()) {
+        auto exception_code = rc.getExceptionCode();
+        if (exception_code == EX_SERVICE_SPECIFIC) {
+            LOG(ERROR) << AT << "Keystore finish returned service specific error: "
+                       << rc.getServiceSpecificError();
+        } else {
+            LOG(ERROR) << AT
+                       << "Communication with Keystore finish failed error: " << exception_code;
+        }
+        return std::nullopt;
+    }
+
+    if (!output) {
+        LOG(ERROR) << AT << "Could not get a signature from Keystore.";
+    }
+
+    return output;
 }
 
 };  // namespace
@@ -232,6 +422,11 @@ Return<void> Keystore::getBlob(const hidl_string& key, getBlob_cb _hidl_cb) {
 }
 
 Return<void> Keystore::getPublicKey(const hidl_string& keyId, getPublicKey_cb _hidl_cb) {
+    if (auto ks2_pubkey = keyStore2GetPubKey(keyId)) {
+        _hidl_cb(KeystoreStatusCode::SUCCESS, std::move(*ks2_pubkey));
+        return Void();
+    }
+
     sp<IServiceManager> sm = defaultServiceManager();
     sp<IBinder> binder = sm->getService(String16(kKeystoreServiceName));
     sp<IKeystoreService> service = interface_cast<IKeystoreService>(binder);
@@ -274,6 +469,11 @@ Return<void> Keystore::getPublicKey(const hidl_string& keyId, getPublicKey_cb _h
 
 Return<void> Keystore::sign(const hidl_string& keyId, const hidl_vec<uint8_t>& dataToSign,
                             sign_cb _hidl_cb) {
+    if (auto ks2_result = keyStore2Sign(keyId, dataToSign)) {
+        _hidl_cb(KeystoreStatusCode::SUCCESS, std::move(*ks2_result));
+        return Void();
+    }
+
     sp<IServiceManager> sm = defaultServiceManager();
     sp<IBinder> binder = sm->getService(String16(kKeystoreServiceName));
     sp<IKeystoreService> service = interface_cast<IKeystoreService>(binder);
