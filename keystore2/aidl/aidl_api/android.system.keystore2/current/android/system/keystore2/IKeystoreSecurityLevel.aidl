@@ -38,5 +38,6 @@ interface IKeystoreSecurityLevel {
   android.system.keystore2.KeyMetadata generateKey(in android.system.keystore2.KeyDescriptor key, in @nullable android.system.keystore2.KeyDescriptor attestationKey, in android.hardware.security.keymint.KeyParameter[] params, in int flags, in byte[] entropy);
   android.system.keystore2.KeyMetadata importKey(in android.system.keystore2.KeyDescriptor key, in @nullable android.system.keystore2.KeyDescriptor attestationKey, in android.hardware.security.keymint.KeyParameter[] params, in int flags, in byte[] keyData);
   android.system.keystore2.KeyMetadata importWrappedKey(in android.system.keystore2.KeyDescriptor key, in android.system.keystore2.KeyDescriptor wrappingKey, in @nullable byte[] maskingKey, in android.hardware.security.keymint.KeyParameter[] params, in android.system.keystore2.AuthenticatorSpec[] authenticators);
+  byte[] convertStorageKeyToEphemeral(in android.system.keystore2.KeyDescriptor storageKey);
   const int KEY_FLAG_AUTH_BOUND_WITHOUT_CRYPTOGRAPHIC_LSKF_BINDING = 1;
 }
