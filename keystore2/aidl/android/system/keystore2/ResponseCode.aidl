@@ -16,6 +16,7 @@
 
 package android.system.keystore2;
 
+/** @hide */
 @VintfStability
 @Backing(type="int")
 enum ResponseCode {
@@ -39,6 +40,9 @@ enum ResponseCode {
      * Indicates that the requested key does not exist.
      */
     KEY_NOT_FOUND = 7,
+    /**
+     * Indicates a data corruption in the Keystore 2.0 database.
+     */
     VALUE_CORRUPTED = 8,
     /*
      * 9 Reserved - formerly "undefined action" was never used

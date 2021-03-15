@@ -32,6 +32,7 @@
 // later when a module using the interface is updated, e.g., Mainline modules.
 
 package android.system.keystore2;
+/* @hide */
 @VintfStability
 parcelable KeyMetadata {
   android.system.keystore2.KeyDescriptor key;

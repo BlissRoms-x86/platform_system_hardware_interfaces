@@ -47,6 +47,7 @@ import android.system.keystore2.Domain;
  * must perform appropriate access control to assure that the caller has access
  * to the given key for the given request. In case of `Domain::BLOB` the implementation
  * must additionally check if the caller has `ManageBlob` permission. See KeyPermission.aidl.
+ * @hide
  */
 @VintfStability
 @RustDerive(Clone=true, Eq=true, PartialEq=true, Ord=true, PartialOrd=true)

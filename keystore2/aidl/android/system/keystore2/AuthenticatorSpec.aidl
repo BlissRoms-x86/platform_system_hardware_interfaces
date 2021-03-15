@@ -22,6 +22,7 @@ import android.hardware.security.keymint.HardwareAuthenticatorType;
  * The authenticator spec is used by `IKeystoreSecurityLevel::importWrappedKey`
  * to specify the sid of each possible authenticator type, e.g., password or
  * biometric authenticator, that the imported key may be bound to.
+ * @hide
  */
 @VintfStability
 parcelable AuthenticatorSpec {
