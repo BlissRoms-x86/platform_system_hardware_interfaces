@@ -35,6 +35,7 @@ import android.system.keystore2.KeyMetadata;
  * Negative codes correspond to `android.hardware.security.keymint.ErrorCode` and
  * indicate KeyMint back end errors. Refer to the KeyMint interface spec for
  * detail.
+ * @hide
  */
 @VintfStability
 interface IKeystoreSecurityLevel {

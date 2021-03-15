@@ -23,6 +23,7 @@ package android.system.keystore2;
  * Implementations must only allow granting permissions that the key owner possesses.
  * The grant permission cannot be granted.
  * Any granted permission applies only to the granted key.
+ * @hide
  */
 @VintfStability
 @Backing(type="int")
