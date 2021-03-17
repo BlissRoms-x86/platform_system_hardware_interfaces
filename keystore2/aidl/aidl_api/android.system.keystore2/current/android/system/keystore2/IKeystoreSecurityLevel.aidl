@@ -33,7 +33,7 @@
 
 package android.system.keystore2;
 /* @hide */
-@VintfStability
+@SensitiveData @VintfStability
 interface IKeystoreSecurityLevel {
   android.system.keystore2.CreateOperationResponse createOperation(in android.system.keystore2.KeyDescriptor key, in android.hardware.security.keymint.KeyParameter[] operationParameters, in boolean forced);
   android.system.keystore2.KeyMetadata generateKey(in android.system.keystore2.KeyDescriptor key, in @nullable android.system.keystore2.KeyDescriptor attestationKey, in android.hardware.security.keymint.KeyParameter[] params, in int flags, in byte[] entropy);
