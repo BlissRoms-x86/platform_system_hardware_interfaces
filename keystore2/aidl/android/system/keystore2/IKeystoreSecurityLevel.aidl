@@ -91,7 +91,7 @@ interface IKeystoreSecurityLevel {
      * ## Error conditions
      * `ResponseCode::INVALID_ARGUMENT` if `key.domain` is set to any other value than
      *                   the ones described above.
-     * A KeyMint ResponseCode may be returned indicating a backend diagnosed error.
+     * A KeyMint ErrorCode may be returned indicating a backend diagnosed error.
      *
      * @param key The domain field of the key descriptor governs how the key will be stored.
      *            * App: The key is stored by the given alias string in the implicit UID namespace
