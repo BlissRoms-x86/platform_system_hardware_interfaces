@@ -22,6 +22,7 @@ import android.system.keystore2.OperationChallenge;
 
 /**
  * This parcelable is returned by `IKeystoreSecurityLevel::createOperation`.
+ * @hide
  */
 @VintfStability
 parcelable CreateOperationResponse {

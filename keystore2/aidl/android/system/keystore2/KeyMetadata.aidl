@@ -25,6 +25,7 @@ import android.system.keystore2.KeyDescriptor;
  * Metadata of a key entry including the key characteristics `authorizations`
  * security level `securityLevel` and a key id based key descriptor.
  * See KeyDescriptor.aidl for the benefits of key id based key descriptor usage.
+ * @hide
  */
 @VintfStability
 parcelable KeyMetadata {

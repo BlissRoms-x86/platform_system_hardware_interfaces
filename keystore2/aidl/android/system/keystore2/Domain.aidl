@@ -16,6 +16,7 @@
 
 package android.system.keystore2;
 
+/** @hide */
 @VintfStability
 @Backing(type="int")
 enum Domain {

@@ -22,6 +22,7 @@ import android.system.keystore2.KeyMetadata;
 /**
  * This includes the metadata of the requested key and the security level interface
  * corresponding to the key's security level.
+ * @hide
  */
 @VintfStability
 parcelable KeyEntryResponse {
