@@ -40,4 +40,10 @@ parcelable CreateOperationResponse {
      * or an initialization vector IV for operations that use them.
      */
     @nullable KeyParameters parameters;
+    /**
+     * An optional opaque blob. If the key given to ISecurityLevel::CreateOperation
+     * uses Domain::BLOB and was upgraded, then this field is present, and represents the
+     * upgraded version of that key.
+     */
+    @nullable byte[] upgradedBlob;
 }

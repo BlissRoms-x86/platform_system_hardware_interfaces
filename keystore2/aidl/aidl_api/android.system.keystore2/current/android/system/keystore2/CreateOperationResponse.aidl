@@ -38,4 +38,5 @@ parcelable CreateOperationResponse {
   android.system.keystore2.IKeystoreOperation iOperation;
   @nullable android.system.keystore2.OperationChallenge operationChallenge;
   @nullable android.system.keystore2.KeyParameters parameters;
+  @nullable byte[] upgradedBlob;
 }
