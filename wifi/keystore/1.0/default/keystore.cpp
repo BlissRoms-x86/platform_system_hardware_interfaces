@@ -27,7 +27,7 @@ namespace {
 
 constexpr const int64_t KS2_NAMESPACE_WIFI = 102;
 
-constexpr const char kKeystore2ServiceName[] = "android.system.keystore2";
+constexpr const char kKeystore2ServiceName[] = "android.system.keystore2.IKeystoreService/default";
 
 const std::string keystore2_grant_id_prefix("ks2_keystore-engine_grant_id:");
 
