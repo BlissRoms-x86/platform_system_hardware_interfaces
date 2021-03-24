@@ -95,4 +95,9 @@ enum KeyPermission {
      * be generated or imported via grant, it does not make sense to grant this key.
      */
     USE_NO_LSKF_BINDING = 0x400,
+    /**
+     * Allows getting a per-boot wrapped ephemeral key from a long lived wrapped storage key.
+     * This permission is checked on calls to IKeystoreSecurityLevel::convertStorageKeyToEphemeral()
+     */
+    CONVERT_STORAGE_KEY_TO_EPHEMERAL = 0x800,
  }
