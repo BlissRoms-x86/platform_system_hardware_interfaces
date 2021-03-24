@@ -191,4 +191,22 @@ interface IKeystoreSecurityLevel {
      * @return byte[] representing the wrapped per-boot ephemeral key.
      */
     byte[] convertStorageKeyToEphemeral(in KeyDescriptor storageKey);
+
+    /**
+     * Allows deleting a Domain::BLOB key from the backend underlying this IKeystoreSecurityLevel.
+     * While there's another function "deleteKey()" in IKeystoreService, that function doesn't
+     * handle Domain::BLOB keys because it doesn't have any information about which underlying
+     * device to actually delete the key blob from.
+     *
+     * ## Error conditions
+     * `ResponseCode::PERMISSION_DENIED` if the caller does not have the permission `DELETE`
+     *               for the designated key, or the "MANAGE_BLOB" permission to manage
+     *               Domain::BLOB keys.
+     * `ResponseCode::INVALID_ARGUMENT` if key.domain != Domain::BLOB or key.blob isn't specified.
+     *
+     * A KeyMint ErrorCode may be returned indicating a backend diagnosed error.
+     *
+     * @param KeyDescriptor representing the key to delete.
+     */
+    void deleteKey(in KeyDescriptor key);
 }
