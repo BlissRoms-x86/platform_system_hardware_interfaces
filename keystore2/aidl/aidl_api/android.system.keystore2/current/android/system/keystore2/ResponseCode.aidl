@@ -46,4 +46,5 @@ enum ResponseCode {
   OPERATION_BUSY = 19,
   INVALID_ARGUMENT = 20,
   TOO_MUCH_DATA = 21,
+  OUT_OF_KEYS = 22,
 }
