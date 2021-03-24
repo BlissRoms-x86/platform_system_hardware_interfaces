@@ -134,7 +134,10 @@ interface IKeystoreService {
     KeyDescriptor[] listEntries(in Domain domain, in long nspace);
 
     /**
-     * Deletes the designated key.
+     * Deletes the designated key. This method can be used on keys with any domain except
+     * Domain::BLOB, since keystore knows which security level any non Domain::BLOB key
+     * belongs to. To delete Domain::BLOB keys, use IKeystoreSecurityLevel::deleteKey()
+     * instead.
      *
      * ## Error conditions
      * `ResponseCode::KEY_NOT_FOUND` if the key designated by `key` did not exist.
