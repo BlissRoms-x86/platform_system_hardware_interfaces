@@ -306,10 +306,8 @@ namespace implementation {
 
 // Methods from ::android::hardware::wifi::keystore::V1_0::IKeystore follow.
 Return<void> Keystore::getBlob(const hidl_string& key, getBlob_cb _hidl_cb) {
-    ::std::vector<uint8_t> value;
-
     if (auto ks2_cert = keyStore2GetCert(key)) {
-        value = std::move(*ks2_cert);
+        _hidl_cb(KeystoreStatusCode::SUCCESS, std::move(*ks2_cert));
     } else {
         LOG(ERROR) << AT << "Failed to get certificate.";
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
