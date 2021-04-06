@@ -184,7 +184,8 @@ class WifiKeystoreHalTest : public TestWithParam<std::string> {
         return true;
     }
 
-    constexpr static const char kKeystoreServiceName[] = "android.system.keystore2";
+    constexpr static const char kKeystoreServiceName[] =
+        "android.system.keystore2.IKeystoreService/default";
     constexpr static const char kTestKeyName[] = "TestKeyName";
 
     sp<IKeystore> keystore;
