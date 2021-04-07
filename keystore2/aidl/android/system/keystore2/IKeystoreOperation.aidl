@@ -36,6 +36,7 @@ package android.system.keystore2;
  * @hide
  */
 @VintfStability
+@SensitiveData
 interface IKeystoreOperation {
 
     /**
