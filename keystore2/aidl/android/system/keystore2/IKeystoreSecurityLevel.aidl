@@ -38,6 +38,7 @@ import android.system.keystore2.KeyMetadata;
  * @hide
  */
 @VintfStability
+@SensitiveData
 interface IKeystoreSecurityLevel {
 
     /**
