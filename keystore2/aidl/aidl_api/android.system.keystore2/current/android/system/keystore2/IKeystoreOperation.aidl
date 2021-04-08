@@ -33,7 +33,7 @@
 
 package android.system.keystore2;
 /* @hide */
-@VintfStability
+@SensitiveData @VintfStability
 interface IKeystoreOperation {
   void updateAad(in byte[] aadInput);
   @nullable byte[] update(in byte[] input);
