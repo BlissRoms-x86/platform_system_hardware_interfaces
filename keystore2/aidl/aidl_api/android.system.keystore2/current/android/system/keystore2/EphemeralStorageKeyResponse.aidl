@@ -1,11 +1,11 @@
 /*
- * Copyright (C) 2020 The Android Open Source Project
+ * Copyright 2021, The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,13 +33,8 @@
 
 package android.system.keystore2;
 /* @hide */
-@SensitiveData @VintfStability
-interface IKeystoreSecurityLevel {
-  android.system.keystore2.CreateOperationResponse createOperation(in android.system.keystore2.KeyDescriptor key, in android.hardware.security.keymint.KeyParameter[] operationParameters, in boolean forced);
-  android.system.keystore2.KeyMetadata generateKey(in android.system.keystore2.KeyDescriptor key, in @nullable android.system.keystore2.KeyDescriptor attestationKey, in android.hardware.security.keymint.KeyParameter[] params, in int flags, in byte[] entropy);
-  android.system.keystore2.KeyMetadata importKey(in android.system.keystore2.KeyDescriptor key, in @nullable android.system.keystore2.KeyDescriptor attestationKey, in android.hardware.security.keymint.KeyParameter[] params, in int flags, in byte[] keyData);
-  android.system.keystore2.KeyMetadata importWrappedKey(in android.system.keystore2.KeyDescriptor key, in android.system.keystore2.KeyDescriptor wrappingKey, in @nullable byte[] maskingKey, in android.hardware.security.keymint.KeyParameter[] params, in android.system.keystore2.AuthenticatorSpec[] authenticators);
-  android.system.keystore2.EphemeralStorageKeyResponse convertStorageKeyToEphemeral(in android.system.keystore2.KeyDescriptor storageKey);
-  void deleteKey(in android.system.keystore2.KeyDescriptor key);
-  const int KEY_FLAG_AUTH_BOUND_WITHOUT_CRYPTOGRAPHIC_LSKF_BINDING = 1;
+@VintfStability
+parcelable EphemeralStorageKeyResponse {
+  byte[] ephemeralKey;
+  @nullable byte[] upgradedBlob;
 }
