@@ -19,6 +19,7 @@ package android.system.keystore2;
 import android.hardware.security.keymint.KeyParameter;
 import android.system.keystore2.AuthenticatorSpec;
 import android.system.keystore2.CreateOperationResponse;
+import android.system.keystore2.EphemeralStorageKeyResponse;
 import android.system.keystore2.IKeystoreOperation;
 import android.system.keystore2.KeyDescriptor;
 import android.system.keystore2.KeyMetadata;
@@ -189,9 +190,10 @@ interface IKeystoreSecurityLevel {
      * @param storageKey The KeyDescriptor with domain Domain::BLOB, and keyblob representing
      *                   the input wrapped storage key to convert
      *
-     * @return byte[] representing the wrapped per-boot ephemeral key.
+     * @return byte[] representing the wrapped per-boot ephemeral key and an optional upgraded
+     *                key blob.
      */
-    byte[] convertStorageKeyToEphemeral(in KeyDescriptor storageKey);
+    EphemeralStorageKeyResponse convertStorageKeyToEphemeral(in KeyDescriptor storageKey);
 
     /**
      * Allows deleting a Domain::BLOB key from the backend underlying this IKeystoreSecurityLevel.
