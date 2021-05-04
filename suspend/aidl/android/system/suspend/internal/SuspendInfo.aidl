@@ -29,8 +29,8 @@ parcelable SuspendInfo {
      */
     long shortSuspendCount;
 
-    /* Total time, in milliseconds, spent in suspend. Short suspend time is not included */
-    long goodSuspendTimeMillis;
+    /* Total time, in milliseconds, spent in suspend */
+    long suspendTimeMillis;
 
     /* Total time, in milliseconds, spent in short suspends */
     long shortSuspendTimeMillis;
