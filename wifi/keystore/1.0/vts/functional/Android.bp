@@ -25,7 +25,6 @@ cc_test {
         "VtsHalWifiKeystoreV1_0TargetTest.cpp",
     ],
     shared_libs: [
-        "libkeymint_support",
         "libbase",
         "liblog",
         "libcutils",
@@ -39,6 +38,7 @@ cc_test {
         "android.hardware.security.keymint-V1-ndk_platform",
         "android.system.keystore2-V1-ndk_platform",
         "android.system.wifi.keystore@1.0",
+        "libkeymint_support",
     ],
     cflags: [
         "-O0",
