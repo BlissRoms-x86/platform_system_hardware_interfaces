@@ -1264,7 +1264,7 @@ class SuspendWakeupTest : public ::testing::Test {
         ASSERT_EQ(actual.suspendAttemptCount, expected.suspendAttemptCount);
         ASSERT_EQ(actual.failedSuspendCount, expected.failedSuspendCount);
         ASSERT_EQ(actual.shortSuspendCount, expected.shortSuspendCount);
-        ASSERT_EQ(actual.goodSuspendTimeMillis, expected.goodSuspendTimeMillis);
+        ASSERT_EQ(actual.suspendTimeMillis, expected.suspendTimeMillis);
         ASSERT_EQ(actual.shortSuspendTimeMillis, expected.shortSuspendTimeMillis);
         ASSERT_EQ(actual.suspendOverheadTimeMillis, expected.suspendOverheadTimeMillis);
         ASSERT_EQ(actual.failedSuspendOverheadTimeMillis, expected.failedSuspendOverheadTimeMillis);
@@ -1307,7 +1307,7 @@ TEST_F(SuspendWakeupTest, LongSuspendStat) {
                std::chrono::milliseconds(kSuspendOverheadMillis), 1);
     SuspendInfo expected;
     expected.suspendAttemptCount = 1;
-    expected.goodSuspendTimeMillis = kLongSuspendMillis;
+    expected.suspendTimeMillis = kLongSuspendMillis;
     expected.suspendOverheadTimeMillis = kSuspendOverheadMillis;
     expected.sleepTimeMillis = kSleepTimeConfig.baseSleepTime.count();
     checkSuspendInfo(expected);
@@ -1320,6 +1320,7 @@ TEST_F(SuspendWakeupTest, ShortSuspendStat) {
     expected.suspendAttemptCount = 1;
     expected.shortSuspendCount = 1;
     expected.shortSuspendTimeMillis = kShortSuspendMillis;
+    expected.suspendTimeMillis = kShortSuspendMillis;
     expected.suspendOverheadTimeMillis = kSuspendOverheadMillis;
     expected.sleepTimeMillis = kSleepTimeConfig.baseSleepTime.count();
     checkSuspendInfo(expected);
@@ -1332,6 +1333,7 @@ TEST_F(SuspendWakeupTest, ShortSuspendBackoffStat) {
     expected.suspendAttemptCount = 2;
     expected.shortSuspendCount = 2;
     expected.shortSuspendTimeMillis = kShortSuspendMillis * 2;
+    expected.suspendTimeMillis = kShortSuspendMillis * 2;
     expected.suspendOverheadTimeMillis = kSuspendOverheadMillis * 2;
     expected.newBackoffCount = 1;
     expected.sleepTimeMillis = kSleepTimeConfig.baseSleepTime.count() * 2;
@@ -1345,6 +1347,7 @@ TEST_F(SuspendWakeupTest, ShortSuspendBackoffContinueStat) {
     expected.suspendAttemptCount = 2;
     expected.shortSuspendCount = 2;
     expected.shortSuspendTimeMillis = kShortSuspendMillis * 2;
+    expected.suspendTimeMillis = kShortSuspendMillis * 2;
     expected.suspendOverheadTimeMillis = kSuspendOverheadMillis * 2;
     expected.newBackoffCount = 1;
     expected.sleepTimeMillis = kSleepTimeConfig.baseSleepTime.count() * 2;
@@ -1355,6 +1358,7 @@ TEST_F(SuspendWakeupTest, ShortSuspendBackoffContinueStat) {
     expected.suspendAttemptCount += 1;
     expected.shortSuspendCount += 1;
     expected.shortSuspendTimeMillis += kShortSuspendMillis;
+    expected.suspendTimeMillis += kShortSuspendMillis;
     expected.suspendOverheadTimeMillis += kSuspendOverheadMillis;
     expected.backoffContinueCount += 1;
     expected.sleepTimeMillis +=

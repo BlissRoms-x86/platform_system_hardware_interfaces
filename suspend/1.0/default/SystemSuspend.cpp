@@ -313,6 +313,7 @@ void SystemSuspend::updateSleepTime(bool success, const struct SuspendTime& susp
 
     if (success) {
         mSuspendInfo.suspendOverheadTimeMillis += suspendOverheadMillis;
+        mSuspendInfo.suspendTimeMillis += suspendTimeMillis;
     } else {
         mSuspendInfo.failedSuspendCount++;
         mSuspendInfo.failedSuspendOverheadTimeMillis += suspendOverheadMillis;
@@ -326,7 +327,6 @@ void SystemSuspend::updateSleepTime(bool success, const struct SuspendTime& susp
     if (!badSuspend) {
         mNumConsecutiveBadSuspends = 0;
         mSleepTime = kSleepTimeConfig.baseSleepTime;
-        mSuspendInfo.goodSuspendTimeMillis += suspendTimeMillis;
         return;
     }
 
