@@ -310,7 +310,7 @@ status_t SuspendControlServiceInternal::dump(int fd, const Vector<String16>& arg
         suspendInfo << "suspend attempts: " << info.suspendAttemptCount << std::endl;
         suspendInfo << "failed suspends: " << info.failedSuspendCount << std::endl;
         suspendInfo << "short suspends: " << info.shortSuspendCount << std::endl;
-        suspendInfo << "good suspend time: " << info.goodSuspendTimeMillis << " ms" << std::endl;
+        suspendInfo << "total suspend time: " << info.suspendTimeMillis << " ms" << std::endl;
         suspendInfo << "short suspend time: " << info.shortSuspendTimeMillis << " ms" << std::endl;
         suspendInfo << "suspend overhead: " << info.suspendOverheadTimeMillis << " ms" << std::endl;
         suspendInfo << "failed suspend overhead: " << info.failedSuspendOverheadTimeMillis << " ms"
