@@ -16,7 +16,6 @@ aidl_interface {
     },
 }
 
-
 aidl_interface {
     name: "android.system.suspend.control",
     local_include_dir: ".",
@@ -34,4 +33,5 @@ aidl_interface {
             sdk_version: "28",
         },
     },
+    versions: ["1"],
 }
