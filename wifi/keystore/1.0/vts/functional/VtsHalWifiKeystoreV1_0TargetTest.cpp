@@ -116,7 +116,8 @@ class WifiKeystoreHalTest : public TestWithParam<std::string> {
     bool deleteKey(std::string keyName, bool useWifiNamespace) {
         String16 keyName16(keyName.data(), keyName.size());
         auto rc = ks2Service->deleteKey(keyDescriptor(keyName, useWifiNamespace));
-        if (!rc.isOk()) {
+        if (!rc.isOk() &&
+            rc.getServiceSpecificError() != int32_t(ks2::ResponseCode::KEY_NOT_FOUND)) {
             cout << "deleteKey: failed binder call" << rc.getDescription() << endl;
             return false;
         }
