@@ -116,7 +116,8 @@ class WifiKeystoreHalTest : public TestWithParam<std::string> {
     bool deleteKey(std::string keyName, bool useWifiNamespace) {
         String16 keyName16(keyName.data(), keyName.size());
         auto rc = ks2Service->deleteKey(keyDescriptor(keyName, useWifiNamespace));
-        if (!rc.isOk()) {
+        if (!rc.isOk() &&
+            rc.getServiceSpecificError() != int32_t(ks2::ResponseCode::KEY_NOT_FOUND)) {
             cout << "deleteKey: failed binder call" << rc.getDescription() << endl;
             return false;
         }
@@ -375,9 +376,12 @@ TEST_P(WifiKeystoreHalTest, GetBlob_success) {
 
     IKeystore::KeystoreStatusCode statusCode;
 
-    auto callback = [&statusCode](IKeystore::KeystoreStatusCode status,
-                                  const ::android::hardware::hidl_vec<uint8_t>& /*value*/) {
+    std::string cert;
+    auto callback = [&statusCode, &cert](IKeystore::KeystoreStatusCode status,
+                                         const ::android::hardware::hidl_vec<uint8_t>& value) {
         statusCode = status;
+        cert = std::string(reinterpret_cast<const char*>(value.data()),
+                           reinterpret_cast<const char*>(value.data()) + value.size());
         return;
     };
 
@@ -388,6 +392,8 @@ TEST_P(WifiKeystoreHalTest, GetBlob_success) {
 
     keystore->getBlob(std::string("USRCERT_") + kTestKeyName, callback);
     EXPECT_EQ(IKeystore::KeystoreStatusCode::SUCCESS, statusCode);
+    // Must return PEM encoded certificates.
+    EXPECT_EQ(cert.rfind("-----BEGIN CERTIFICATE-----", 0), 0);
 
     result = deleteKey(kTestKeyName, true);
     EXPECT_EQ(result, true);

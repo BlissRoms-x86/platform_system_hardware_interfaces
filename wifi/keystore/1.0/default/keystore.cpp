@@ -1,26 +1,29 @@
+#include "include/wifikeystorehal/keystore.h"
+
+#include <aidl/android/security/legacykeystore/ILegacyKeystore.h>
 #include <aidl/android/system/keystore2/IKeystoreService.h>
+#include <aidl/android/system/keystore2/ResponseCode.h>
 #include <android-base/logging.h>
 #include <android-base/strings.h>
 #include <android/binder_manager.h>
 #include <binder/IServiceManager.h>
-#include <private/android_filesystem_config.h>
-
-#include <future>
-#include <vector>
-#include "include/wifikeystorehal/keystore.h"
-
 #include <ctype.h>
 #include <openssl/base.h>
 #include <openssl/bio.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
+#include <private/android_filesystem_config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <future>
+#include <vector>
+
 #define AT __func__ << ":" << __LINE__ << " "
 
 namespace ks2 = ::aidl::android::system::keystore2;
+namespace lks = ::aidl::android::security::legacykeystore;
 namespace KMV1 = ::aidl::android::hardware::security::keymint;
 
 namespace {
@@ -28,6 +31,7 @@ namespace {
 constexpr const int64_t KS2_NAMESPACE_WIFI = 102;
 
 constexpr const char kKeystore2ServiceName[] = "android.system.keystore2.IKeystoreService/default";
+constexpr const char kLegacyKeystoreServiceName[] = "android.security.legacykeystore";
 
 const std::string keystore2_grant_id_prefix("ks2_keystore-engine_grant_id:");
 
@@ -79,8 +83,8 @@ ks2::KeyDescriptor mkKeyDescriptor(const std::string& alias) {
             LOG(ERROR) << AT << "Couldn't parse grant name: " << alias;
         }
         return {
-            .nspace = static_cast<int64_t>(tmp),
             .domain = ks2::Domain::GRANT,
+            .nspace = static_cast<int64_t>(tmp),
             .alias = std::nullopt,
             .blob = std::nullopt,
         };
@@ -96,6 +100,46 @@ ks2::KeyDescriptor mkKeyDescriptor(const std::string& alias) {
 
 using android::hardware::hidl_string;
 using android::hardware::hidl_vec;
+
+// Helper method to convert certs in DER format to PEM format required by
+// openssl library used by supplicant. If boringssl cannot parse the input as one or more
+// X509 certificates in DER encoding, this function returns the input as-is. The assumption in
+// that case is that either the `cert_bytes` is already PEM encoded, or `cert_bytes` is something
+// completely different that was intentionally installed by the Wi-Fi subsystem and it must not
+// be changed here.
+// If any error occurs during PEM encoding, this function returns std::nullopt and logs an error.
+std::optional<hidl_vec<uint8_t>> convertDerCertToPemOrPassthrough(
+    const std::vector<uint8_t>& cert_bytes) {
+    // If cert_bytes is a DER encoded X509 certificate, it must be reencoded as PEM, because
+    // wpa_supplicant only understand PEM. Otherwise the cert_bytes are returned as is.
+    const uint8_t* cert_current = cert_bytes.data();
+    const uint8_t* cert_end = cert_current + cert_bytes.size();
+    bssl::UniquePtr<BIO> pem_bio(BIO_new(BIO_s_mem()));
+    while (cert_current < cert_end) {
+        auto cert =
+            bssl::UniquePtr<X509>(d2i_X509(nullptr, &cert_current, cert_end - cert_current));
+        // If part of the bytes cannot be parsed as X509 DER certificate, the original blob
+        // shall be returned as-is.
+        if (!cert) {
+            LOG(WARNING) << AT
+                         << "Could not parse DER X509 cert from buffer. Returning blob as is.";
+            return cert_bytes;
+        }
+
+        if (!PEM_write_bio_X509(pem_bio.get(), cert.get())) {
+            LOG(ERROR) << AT << "Could not convert cert to PEM format.";
+            return std::nullopt;
+        }
+    }
+
+    const uint8_t* pem_bytes;
+    size_t pem_len;
+    if (!BIO_mem_contents(pem_bio.get(), &pem_bytes, &pem_len)) {
+        LOG(ERROR) << AT << "Could not extract pem_bytes from BIO.";
+        return std::nullopt;
+    }
+    return {{pem_bytes, pem_bytes + pem_len}};
+}
 
 std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
     ::ndk::SpAIBinder keystoreBinder(AServiceManager_checkService(kKeystore2ServiceName));
@@ -134,13 +178,11 @@ std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
     ks2::KeyEntryResponse response;
     auto rc = keystore2->getKeyEntry(descriptor, &response);
     if (!rc.isOk()) {
-        auto exception_code = rc.getExceptionCode();
-        if (exception_code == EX_SERVICE_SPECIFIC) {
-            LOG(ERROR) << AT << "Keystore getKeyEntry returned service specific error: "
-                       << rc.getServiceSpecificError();
+        if (rc.getServiceSpecificError() != int32_t(ks2::ResponseCode::KEY_NOT_FOUND)) {
+            LOG(WARNING) << AT
+                         << "Entry not found in Keystore 2.0. Falling back to legacy keystore.";
         } else {
-            LOG(ERROR) << AT << "Communication with Keystore getKeyEntry failed error: "
-                       << exception_code;
+            LOG(ERROR) << AT << "Keystore 2.0 getKeyEntry failed error: " << rc.getDescription();
         }
         return {};
     }
@@ -150,7 +192,8 @@ std::optional<std::vector<uint8_t>> keyStore2GetCert(const hidl_string& key) {
     } else if (!ca_cert && response.metadata.certificate) {
         return std::move(*response.metadata.certificate);
     } else {
-        LOG(ERROR) << AT << "No " << (ca_cert ? "CA" : "client") << " certificate found.";
+        LOG(WARNING) << AT << "No " << (ca_cert ? "CA" : "client") << " certificate found. "
+                     << "Falling back to legacy keystore.";
         return {};
     }
 }
@@ -191,7 +234,7 @@ std::optional<std::vector<uint8_t>> keyStore2GetPubKey(const hidl_string& key) {
     }
 
     std::optional<std::vector<uint8_t>> pub_key(extractPubKey(*response.metadata.certificate));
-    return std::move(pub_key);
+    return pub_key;
 }
 
 std::optional<std::vector<uint8_t>> keyStore2Sign(const hidl_string& key,
@@ -294,8 +337,26 @@ std::optional<std::vector<uint8_t>> keyStore2Sign(const hidl_string& key,
     return output;
 }
 
-};  // namespace
+std::optional<std::vector<uint8_t>> getLegacyKeystoreBlob(const hidl_string& key) {
+    ::ndk::SpAIBinder keystoreBinder(AServiceManager_checkService(kLegacyKeystoreServiceName));
+    auto legacyKeystore = lks::ILegacyKeystore::fromBinder(keystoreBinder);
 
+    if (!legacyKeystore) {
+        LOG(WARNING) << AT << "Unable to connect to LegacyKeystore";
+        return std::nullopt;
+    }
+
+    std::optional<std::vector<uint8_t>> blob(std::vector<uint8_t>{});
+    auto rc = legacyKeystore->get(key, AID_WIFI, &*blob);
+    if (!rc.isOk()) {
+        LOG(ERROR) << AT << "Failed to get legacy keystore entry for alias \"" << key
+                   << "\": " << rc.getDescription();
+        return std::nullopt;
+    }
+    return blob;
+}
+
+};  // namespace
 
 namespace android {
 namespace system {
@@ -303,13 +364,23 @@ namespace wifi {
 namespace keystore {
 namespace V1_0 {
 namespace implementation {
-
 // Methods from ::android::hardware::wifi::keystore::V1_0::IKeystore follow.
 Return<void> Keystore::getBlob(const hidl_string& key, getBlob_cb _hidl_cb) {
+    std::vector<uint8_t> result_cert;
     if (auto ks2_cert = keyStore2GetCert(key)) {
-        _hidl_cb(KeystoreStatusCode::SUCCESS, std::move(*ks2_cert));
+        result_cert = std::move(*ks2_cert);
+    } else if (auto blob = getLegacyKeystoreBlob(key)) {
+        result_cert = std::move(*blob);
     } else {
         LOG(ERROR) << AT << "Failed to get certificate.";
+        _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
+        return Void();
+    }
+
+    if (auto result_cert_hidl = convertDerCertToPemOrPassthrough(result_cert)) {
+        _hidl_cb(KeystoreStatusCode::SUCCESS, *result_cert_hidl);
+    } else {
+        LOG(ERROR) << AT << "Conversion to PEM failed.";
         _hidl_cb(KeystoreStatusCode::ERROR_UNKNOWN, {});
     }
     return Void();
