@@ -23,6 +23,7 @@ cc_test {
     shared_libs: [
         "libbase",
         "liblog",
+        "libcrypto",
         "libcutils",
         "libhidlbase",
         "libnativehelper",
