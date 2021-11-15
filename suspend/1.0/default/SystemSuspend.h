@@ -46,6 +46,7 @@ using ::android::system::suspend::internal::SuspendInfo;
 
 using namespace std::chrono_literals;
 
+class PowerbtndThread;
 class SystemSuspend;
 
 struct SuspendStats {
@@ -126,6 +127,7 @@ class SystemSuspend : public ISystemSuspend {
     unique_fd mWakeupCountFd;
     unique_fd mStateFd;
     std::string mSleepState;
+    PowerbtndThread *mPwrbtnd;
 
     unique_fd mSuspendStatsFd;
     unique_fd mSuspendTimeFd;
