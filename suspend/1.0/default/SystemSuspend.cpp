@@ -74,6 +74,13 @@ PowerbtndThread::PowerbtndThread()
         return;
     }
 
+    if (GetBoolProperty("poweroff.disable_virtual_power_button", false)) {
+        LOG(INFO) << "virtual power button events disabled by prop";
+        // unique fd cannot be closed manually, just leave it
+        //close(mUinputFd);
+        return;
+    }
+
     struct uinput_user_dev ud;
     memset(&ud, 0, sizeof(ud));
     strcpy(ud.name, "Android Power Button");
