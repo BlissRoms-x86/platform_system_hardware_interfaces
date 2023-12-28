@@ -153,7 +153,12 @@ void SuspendControlServiceInternal::setSuspendService(const wp<SystemSuspend>& s
 
 binder::Status SuspendControlServiceInternal::enableAutosuspend(bool* _aidl_return) {
     const auto suspendService = mSuspend.promote();
-    return retOk(suspendService != nullptr && suspendService->enableAutosuspend(), _aidl_return);
+    if(suspendService != nullptr){
+        suspendService->enableAutosuspend();
+    }
+    //return retOk(suspendService != nullptr && suspendService->enableAutosuspend(), _aidl_return);
+    // return false always so that we'll always know if framework wants to suspend
+    return retOk(false, _aidl_return);
 }
 
 binder::Status SuspendControlServiceInternal::forceSuspend(bool* _aidl_return) {
