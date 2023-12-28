@@ -64,6 +64,7 @@ class PowerbtndThread {
     void emitKey(int key_code, int val);
     void run();
     unique_fd mUinputFd;
+    bool emitNonWakeupKeys;
 };
 
 PowerbtndThread::PowerbtndThread()
@@ -74,11 +75,10 @@ PowerbtndThread::PowerbtndThread()
         return;
     }
 
+    emitNonWakeupKeys = true;
     if (GetBoolProperty("poweroff.disable_virtual_power_button", false)) {
         LOG(INFO) << "virtual power button events disabled by prop";
-        // unique fd cannot be closed manually, just leave it
-        //close(mUinputFd);
-        return;
+        emitNonWakeupKeys = false;
     }
 
     struct uinput_user_dev ud;
@@ -91,11 +91,14 @@ PowerbtndThread::PowerbtndThread()
     ioctl(mUinputFd, UI_DEV_CREATE, 0);
 
     std::thread([this] { run(); }).detach();
-    LOG(INFO) << "automatic system suspend enabled";
+    LOG(INFO) << "powerbtnd started";
 }
 
 void PowerbtndThread::sendKeyPower(bool longpress)
 {
+    if(!emitNonWakeupKeys){
+        return;
+    }
     emitKey(KEY_POWER, 1);
     if (longpress) sleep(2);
     emitKey(KEY_POWER, 0);
@@ -268,6 +271,7 @@ SystemSuspend::SystemSuspend(unique_fd wakeupCountFd, unique_fd stateFd, unique_
 }
 
 bool SystemSuspend::enableAutosuspend() {
+    /*
     static bool initialized = false;
     if (initialized) {
         LOG(ERROR) << "Autosuspend already started.";
@@ -276,6 +280,9 @@ bool SystemSuspend::enableAutosuspend() {
 
     initAutosuspend();
     initialized = true;
+    */
+    // framework wants to autosuspend, we just force suspend
+    forceSuspend();
     return true;
 }
 
@@ -291,6 +298,8 @@ bool SystemSuspend::forceSuspend() {
 
     if (!success) {
         PLOG(VERBOSE) << "error writing to /sys/power/state for forceSuspend";
+    } else {
+        mPwrbtnd->sendKeyWakeup();
     }
     return success;
 }
