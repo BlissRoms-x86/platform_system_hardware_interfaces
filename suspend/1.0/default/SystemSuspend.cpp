@@ -362,9 +362,10 @@ bool SystemSuspend::forceSuspend() {
 
     if (!success) {
         PLOG(VERBOSE) << "error writing to /sys/power/state for forceSuspend";
-    } else {
-        mPwrbtnd->sendKeyWakeup();
     }
+    // light the screen up after suspend attempt, regardless of it failed or not
+    // that way the user would know to try and sleep the device again if they want to
+    mPwrbtnd->sendKeyWakeup();
     return success;
 }
 
