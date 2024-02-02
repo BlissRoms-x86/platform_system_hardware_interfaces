@@ -33,6 +33,7 @@
 
 #include <string>
 #include <thread>
+#include <cstdlib>
 
 using ::android::base::GetBoolProperty;
 using ::android::base::GetProperty;
@@ -292,6 +293,8 @@ bool SystemSuspend::forceSuspend() {
     //  or reset mSuspendCounter, it just ignores them.  When the system
     //  returns from suspend, the wakelocks and SuspendCounter will not have
     //  changed.
+    std::system("/system/bin/sh /system/etc/pre_sleep.sh");
+
     auto counterLock = std::unique_lock(mCounterLock);
     bool success = WriteStringToFd(getSleepState(), mStateFd);
     counterLock.unlock();
@@ -302,6 +305,8 @@ bool SystemSuspend::forceSuspend() {
     // light the screen up after suspend attempt, regardless of it failed or not
     // that way the user would know to try and sleep the device again if they want to
     mPwrbtnd->sendKeyWakeup();
+    std::system("/system/bin/sh /system/etc/post_sleep.sh");
+
     return success;
 }
 
