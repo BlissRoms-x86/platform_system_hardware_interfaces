@@ -1,5 +1,9 @@
 service system_suspend /system/bin/hw/android.system.suspend@1.0-service
     class early_hal
-    user system
-    group system wakelock uhid input
-    capabilities BLOCK_SUSPEND SYS_MODULE
+    #user system
+    #group system wakelock uhid input
+    #capabilities BLOCK_SUSPEND
+    # let pre_sleep and post_sleep hooks do anything they want
+    user root
+    group root
+    seclabel u:r:su:s0
