@@ -1,5 +1,8 @@
 service system_suspend /system/bin/hw/android.system.suspend@1.0-service
     class hal
-    user system
-    group system wakelock uhid input
-    capabilities BLOCK_SUSPEND
+    #user system
+    #group system wakelock uhid input
+    #capabilities BLOCK_SUSPEND
+    user root
+    group root
+    seclabel u:r:su:s0
