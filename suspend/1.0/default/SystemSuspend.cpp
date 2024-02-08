@@ -358,6 +358,7 @@ bool SystemSuspend::forceSuspend() {
     //  returns from suspend, the wakelocks and SuspendCounter will not have
     //  changed.
     std::system("/system/bin/sh /system/etc/pre_sleep.sh");
+    std::system("/system/bin/sh /vendor/etc/pre_sleep.sh");
 
     auto counterLock = std::unique_lock(mCounterLock);
     bool success = WriteStringToFd(getSleepState(), mStateFd);
@@ -370,6 +371,7 @@ bool SystemSuspend::forceSuspend() {
     // that way the user would know to try and sleep the device again if they want to
     mPwrbtnd->sendKeyWakeup();
     std::system("/system/bin/sh /system/etc/post_sleep.sh");
+    std::system("/system/bin/sh /vendor/etc/post_sleep.sh");
 
     return success;
 }
