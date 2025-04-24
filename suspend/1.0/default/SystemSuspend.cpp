@@ -37,6 +37,7 @@
 using ::android::base::Error;
 using ::android::base::GetBoolProperty;
 using ::android::base::GetProperty;
+using ::android::base::SetProperty;
 using ::android::base::ReadFdToString;
 using ::android::base::WriteStringToFd;
 using ::android::base::StringPrintf;
@@ -366,6 +367,10 @@ bool SystemSuspend::forceSuspend() {
     // light the screen up after suspend attempt, regardless of it failed or not
     // that way the user would know to try and sleep the device again if they want to
     mPwrbtnd->sendKeyWakeup();
+
+    // Set a property to indicate that the device is awake
+    SetProperty("suspend.device_is_awake", "1");
+
     return success;
 }
 
